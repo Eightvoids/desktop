@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Eight Voids",
+  "version": "1.0.0",
+  "identifier": "com.eightvoids.app",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Eight Voids",
+        "url": "https://app.eightvoids.com/workspace/index.html",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Eight Voids",
+    "copyright": "© 2026 Eight Voids. All rights reserved.",
+    "category": "Business",
+    "shortDescription": "Eight Voids workspace",
+    "longDescription": "Eight Voids – one AI-supported workspace for design guardianship, construction administration, architecture & fit-out and BIM.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

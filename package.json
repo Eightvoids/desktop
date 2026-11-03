@@ -1,0 +1,12 @@
+{
+  "name": "eightvoids-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Eight Voids desktop app for Windows and macOS",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
