@@ -1,0 +1,35 @@
+{
+  "identifier": "eightvoids",
+  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing a folder, saving new files into it, opening links and folders.",
+  "windows": ["main"],
+  "local": true,
+  "remote": {
+    "urls": ["https://eightvoids.com/*", "https://*.eightvoids.com/*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:webview:allow-create-webview-window",
+    "notification:default",
+    "dialog:allow-open",
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$HOME" }, { "path": "$HOME/**" }]
+    },
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPCONFIG" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$HOME" },
+        { "path": "$HOME/**" }
+      ]
+    }
+  ]
+}

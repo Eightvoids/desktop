@@ -1,3 +1,47 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Eight Voids</title>
-<meta http-equiv="refresh" content="0;url=https://app.eightvoids.com/workspace/index.html"></head>
-<body style="background:#17191A;color:#ECEDEB;font:15px system-ui;display:grid;place-items:center;height:100vh;margin:0">Opening Eight Voids…</body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eight Voids</title>
+<style>
+  :root{--bg:#17191A;--fg:#ECEDEB;--mute:#9DA39F;--acc:#8FA35A}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:15px "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none}
+  main{height:100%;display:grid;place-items:center;text-align:center}
+  img{width:120px;height:auto;animation:in .9s cubic-bezier(.22,.8,.3,1) both}
+  p{margin:22px 0 0;color:var(--mute);min-height:1.4em}
+  button{margin-top:14px;padding:9px 20px;border-radius:99px;border:0;background:var(--acc);color:#fff;font:inherit;cursor:pointer}
+  [hidden]{display:none!important}
+  @keyframes in{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <img src="logo.png" alt="Eight Voids">
+    <p id="msg">Starting…</p>
+    <button id="retry" hidden>Try again</button>
+  </div>
+</main>
+<script>
+  /* First screen of the Eight Voids desktop app: checks the connection, then opens the sign-in. */
+  var START = 'https://eightvoids.com/login?app=1&start=1';
+  var msg = document.getElementById('msg'), retry = document.getElementById('retry');
+  function offline() {
+    msg.textContent = 'No internet connection. Eight Voids opens as soon as you are back online.';
+    retry.hidden = false;
+  }
+  function go() {
+    retry.hidden = true; msg.textContent = 'Starting…';
+    if (!navigator.onLine) return offline();
+    var done = false, timer = setTimeout(function () { if (!done) { done = true; offline(); } }, 12000);
+    fetch('https://eightvoids.com/logo.png?t=' + Date.now(), { mode: 'no-cors', cache: 'no-store' })
+      .then(function () { if (done) return; done = true; clearTimeout(timer); location.replace(START); })
+      .catch(function () { if (done) return; done = true; clearTimeout(timer); offline(); });
+  }
+  retry.onclick = go;
+  window.addEventListener('online', go);
+  go();
+</script>
+</body>
+</html>
