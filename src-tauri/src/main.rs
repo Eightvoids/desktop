@@ -11,7 +11,6 @@ use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_notification::NotificationExt;
-use tauri_plugin_window_state::StateFlags;
 
 // Desktop behaviour added to every Eight Voids page shown in the window.
 const DESK_JS: &str = include_str!("../desk.js");
@@ -31,12 +30,6 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
-        .plugin(
-            // Remembers size and position (never "hidden", so the window always opens).
-            tauri_plugin_window_state::Builder::default()
-                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
-                .build(),
-        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -46,9 +39,10 @@ fn main() {
             // The main window: starts on the Eight Voids sign-in screen.
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("Eight Voids")
-                .inner_size(1440.0, 900.0)
-                .min_inner_size(1100.0, 700.0)
+                .inner_size(1280.0, 800.0)
+                .min_inner_size(1000.0, 660.0)
                 .center()
+                .maximized(true)
                 .disable_drag_drop_handler()
                 .initialization_script(DESK_JS)
                 .build()?;
