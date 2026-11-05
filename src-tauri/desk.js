@@ -38,6 +38,25 @@
   }
 
   window.EV_DESK = true;
+
+  /* Azure's own "Login complete" page and the hand-over page flash white with a blue link for a moment.
+     Inside the app we cover them with the Eight Voids loading background, so sign-in looks seamless. */
+  if (/^app\.eightvoids\.com$/i.test(H) && /^\/(\.auth\/|index\.html$|$)/.test(location.pathname) && !/^\/\.auth\/me/.test(location.pathname)) {
+    (function veil() {
+      var dk = false;
+      try { var t = JSON.parse(localStorage.getItem('evw.theme') || 'null'); dk = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches); } catch (e) {}
+      var bg = dk ? '#17191A' : '#F4F2EE';
+      var css = 'html,body{background:' + bg + '!important}body>*{visibility:hidden!important}' +
+        'html::after{content:"";position:fixed;left:50%;top:50%;width:132px;height:132px;margin:-66px 0 0 -66px;background:url(/evmark.png) center/132px 132px no-repeat;opacity:.9}';
+      function put() {
+        var root = document.documentElement; if (!root) return false;
+        if (document.getElementById('evd-veil')) return true;
+        var st = document.createElement('style'); st.id = 'evd-veil'; st.textContent = css;
+        (document.head || root).appendChild(st); return true;
+      }
+      if (!put()) { var mo = new MutationObserver(function () { if (put()) mo.disconnect(); }); mo.observe(document, { childList: true, subtree: true }); }
+    })();
+  }
   if (!OURS) { linkRules(); return; }      /* Microsoft sign-in pages: only keep outside links outside */
 
   /* ---------- look and feel of a desktop program ---------- */
