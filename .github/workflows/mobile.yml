@@ -1,0 +1,125 @@
+# Builds the Eight Voids phone and tablet apps on every push to main.
+#   Android: EightVoids-Android.apk (install on a phone for testing) and EightVoids-Android.aab (for Google Play)
+#            published on this repository's Releases page under "Eight Voids mobile v<version>".
+#   iPhone / iPad: checks that the app builds. Signed builds for TestFlight / App Store start
+#            once the Apple Developer account exists (the Apple certificates are then added as secrets).
+# The Android test key is made fresh on each build unless the secrets ANDROID_KEYSTORE_B64 and
+# ANDROID_KEYSTORE_PASSWORD are added (the permanent key, needed before Google Play).
+name: Build mobile apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-build
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Android NDK and build tools
+        run: |
+          sdkmanager --install "ndk;27.2.12479018" "platforms;android-34" "build-tools;34.0.0"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install build tools
+        run: npm install
+
+      - name: Create the Android project
+        run: |
+          npx tauri android init --ci
+          M=src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.CAMERA' "$M" || sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <application#' "$M"
+          grep -q 'POST_NOTIFICATIONS' "$M" || sed -i 's#<application#<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <application#' "$M"
+          cat "$M"
+
+      - name: Make app icons from app-icon.png
+        run: npx tauri icon app-icon.png
+
+      - name: Build (APK for phones, AAB for Google Play)
+        run: npx tauri android build --apk --aab
+
+      - name: Sign the APK
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          BT="$ANDROID_HOME/build-tools/34.0.0"
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*universal*release*.apk' | head -1)
+          [ -n "$APK" ] || APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)
+          echo "APK: $APK"
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > ks.jks; PASS="$KS_PASS"
+          else
+            PASS="test-$GITHUB_RUN_ID"
+            keytool -genkeypair -keystore ks.jks -alias eightvoids -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" -dname "CN=Eight Voids, O=Eight Voids, C=SA"
+          fi
+          "$BT/zipalign" -p -f 4 "$APK" aligned.apk
+          "$BT/apksigner" sign --ks ks.jks --ks-key-alias eightvoids --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --out EightVoids-Android.apk aligned.apk
+          rm -f ks.jks aligned.apk
+          AAB=$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' | head -1)
+          [ -n "$AAB" ] && cp "$AAB" EightVoids-Android.aab || true
+
+      - name: Keep the files with this build
+        uses: actions/upload-artifact@v4
+        with:
+          name: EightVoids-Android
+          path: |
+            EightVoids-Android.apk
+            EightVoids-Android.aab
+
+      - name: Publish on the Releases page
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          V=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          T="mobile-v$V"
+          gh release view "$T" >/dev/null 2>&1 || gh release create "$T" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Eight Voids mobile v$V" \
+            --notes "Android test app: download EightVoids-Android.apk on the phone, open it and allow installing from this source. EightVoids-Android.aab is the Google Play package (used once the Google Play account exists). iPhone / iPad: TestFlight once the Apple Developer account exists."
+          gh release upload "$T" EightVoids-Android.apk --clobber
+          [ -f EightVoids-Android.aab ] && gh release upload "$T" EightVoids-Android.aab --clobber || true
+
+  ios:
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+
+      - name: Install build tools
+        run: npm install
+
+      - name: Check the iPhone / iPad app builds (signing comes with the Apple Developer account)
+        run: cargo build --manifest-path src-tauri/Cargo.toml --lib --release --target aarch64-apple-ios
