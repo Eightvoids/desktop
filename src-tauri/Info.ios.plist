@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCameraUsageDescription</key>
+  <string>Eight Voids uses the camera to take site photos for observations, materials and inspections.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Eight Voids lets you choose site photos from your photo library.</string>
+  <key>NSPhotoLibraryAddUsageDescription</key>
+  <string>Eight Voids can save photos and files you download to your photo library.</string>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+</dict>
+</plist>
