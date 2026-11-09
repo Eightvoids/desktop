@@ -276,6 +276,15 @@
       sw2.appendChild(cb2); sw2.appendChild(el('span', '', 'Save downloads to this folder automatically')); cb2.onchange = function () { S.autosave = cb2.checked; save(); };
       s2.appendChild(sw2); box.appendChild(s2);
 
+      /* files & Outlook (Organise, Outlook bridge, Save to SharePoint – in the workspace, Connections › This computer) */
+      var s4 = el('div', 'evd-s'); s4.appendChild(el('h4', '', 'Files & Outlook'));
+      s4.appendChild(el('p', '', 'Organise your synced SharePoint / OneDrive folders into the official structure (any file size), bring in emails from your classic Outlook (read only), and save files added in the platform into your synced folder.'));
+      var r4 = el('div', 'evd-row'); r4.appendChild(button('Open Files & Outlook', function () {
+        ov.remove();
+        try { st.view = 'connect'; render(); window.scrollTo(0, 0); setTimeout(function () { var c = document.querySelector('#main .evpc'); if (c) c.scrollIntoView({ block: 'start' }); }, 300); }
+        catch (e) { location.href = 'https://app.eightvoids.com/workspace/index.html'; }
+      }, true)); s4.appendChild(r4); box.appendChild(s4);
+
       /* updates */
       var s3 = el('div', 'evd-s'); s3.appendChild(el('h4', '', 'Updates'));
       s3.appendChild(el('p', '', 'The workspace itself always updates automatically. A new desktop installer is only needed when the app’s own features change.'));

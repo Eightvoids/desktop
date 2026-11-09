@@ -23,3 +23,9 @@ To release a new version, raise the version number in `src-tauri/tauri.conf.json
 The workspace itself (app.eightvoids.com) updates on its own – a new app is only needed when the app's own features change.
 
 No project data is stored in this repository.
+
+## Version 1.3.0 – Files & Outlook (no Microsoft 365 approval needed)
+- **Organise folders** (workspace › Connections › This computer, or Design Files): scans the synced SharePoint / OneDrive folder, sorts every file into the official structure (drawing number → rules → optional AI), you check the list, then it **copies** – any file size, originals never changed, an existing file is never replaced.
+- **Large files**: uploaded straight to Eight Voids storage (EV_BIG_STORAGE) in 8 MB pieces, 4 at a time; continues after a break.
+- **Outlook bridge** (Windows, classic Outlook): every 5 minutes reads the ticked folders of the person's own mailbox through fixed PowerShell scripts in `src-tauri/ps/` (read only – never sends, moves or deletes) and brings new emails + attachments into Correspondence. Doubles are skipped by the Internet message id.
+- **Save to SharePoint**: files added in the platform are saved as new copies into the project's official folder on this computer; OneDrive syncs them.

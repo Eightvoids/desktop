@@ -1,10 +1,15 @@
 {
   "identifier": "eightvoids",
-  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing a folder, saving new files into it, opening links and folders.",
-  "windows": ["main"],
+  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, and the read-only Outlook bridge.",
+  "windows": [
+    "main"
+  ],
   "local": true,
   "remote": {
-    "urls": ["https://eightvoids.com/*", "https://*.eightvoids.com/*"]
+    "urls": [
+      "https://eightvoids.com/*",
+      "https://*.eightvoids.com/*"
+    ]
   },
   "permissions": [
     "core:default",
@@ -14,7 +19,14 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "$HOME" }, { "path": "$HOME/**" }]
+      "allow": [
+        {
+          "path": "$HOME"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
     },
     "fs:allow-exists",
     "fs:allow-mkdir",
@@ -22,14 +34,46 @@
     "fs:allow-write-text-file",
     "fs:allow-write-file",
     "fs:allow-read-dir",
+    "fs:allow-write",
+    "fs:allow-create",
+    "fs:allow-stat",
+    "fs:allow-seek",
+    "fs:allow-read",
+    "fs:allow-open",
+    "fs:allow-copy-file",
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$APPCONFIG" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$HOME" },
-        { "path": "$HOME/**" }
+        {
+          "path": "$APPCONFIG"
+        },
+        {
+          "path": "$APPCONFIG/**"
+        },
+        {
+          "path": "$HOME"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$APPCACHE"
+        },
+        {
+          "path": "$APPCACHE/**"
+        }
+      ],
+      "deny": [
+        {
+          "path": "$HOME/.ssh/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Microsoft/Credentials/**"
+        }
       ]
-    }
+    },
+    "allow-outlook-folders",
+    "allow-outlook-read",
+    "allow-outlook-save-atts"
   ]
 }
