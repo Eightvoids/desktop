@@ -24,6 +24,10 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.5 – full email history
+- outlook_read takes an optional "until": emails received before that time, newest first, at most "max" per folder. The workspace uses it to bring in the whole mailbox history in rounds of 100 (Connections › This computer › Outlook bridge › All dates), while new emails keep coming in every 5 minutes.
+- Each folder jumps straight to the older part with Outlook's own filter; if Outlook refuses the filter, newer emails are skipped one by one instead.
+
 ## Version 1.3.4 – Outlook bridge reads every ticked folder
 - The ticked folders now reach the reader one per line. Before, Windows PowerShell 5.1 read the list as one item, so with two or more folders nothing matched and no emails were read (the Inbox self-test still saw 81 emails).
 

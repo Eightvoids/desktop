@@ -159,11 +159,13 @@ async fn outlook_folders() -> Result<String, String> {
 
 #[cfg(desktop)]
 #[tauri::command]
-async fn outlook_read(since: String, folders: Vec<String>, max: u32) -> Result<String, String> {
+async fn outlook_read(since: String, folders: Vec<String>, max: u32, until: Option<String>) -> Result<String, String> {
     let f = folders.join("\n");
     let max = max.clamp(1, 1000).to_string();
+    // "until" (optional): read older emails, newest first, received before this time – used to bring in the full history.
+    let until = until.unwrap_or_default();
     tauri::async_runtime::spawn_blocking(move || {
-        outlook::run(outlook::READ, vec![("EV_SINCE", since), ("EV_FOLDERS", f), ("EV_MAX", max)])
+        outlook::run(outlook::READ, vec![("EV_SINCE", since), ("EV_FOLDERS", f), ("EV_MAX", max), ("EV_UNTIL", until)])
     })
     .await
     .map_err(|e| e.to_string())?

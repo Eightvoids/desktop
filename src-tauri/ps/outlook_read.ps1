@@ -5,25 +5,36 @@ $since = [datetime]::Parse($env:EV_SINCE, [Globalization.CultureInfo]::Invariant
 # one folder per line (Windows PowerShell 5.1 reads a JSON list as a single item)
 $want = @(([string]$env:EV_FOLDERS) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $max = [int]$env:EV_MAX
+# EV_UNTIL set = full-history mode: emails received before this time, newest first, at most $max per folder.
+$until = $null
+if ($env:EV_UNTIL) { $until = [datetime]::Parse($env:EV_UNTIL, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime() }
 # Dates are compared as dates (not as text), so this works with any Windows language or calendar.
 $cand = New-Object System.Collections.ArrayList
 function Collect($f) {
   $rel = EvRel $f
   $items = $f.Items
+  if ($until) {
+    # jump straight to the older part of the folder; if Outlook refuses the filter (or finds nothing), newer items are skipped one by one instead
+    $r = $null
+    try { $r = $items.Restrict("[ReceivedTime] < '" + $until.ToString('g') + "'") } catch { }
+    if ($r -and $r.Count -gt 0) { $items = $r }
+  }
   $items.Sort('[ReceivedTime]', $true)
   # GetFirst / GetNext follow the sort (newest first). A few older items in a row end the folder.
   $old = 0
+  $n = 0
   $it = $items.GetFirst()
   while ($null -ne $it) {
     $rt = $null
     try { $rt = [datetime]$it.ReceivedTime } catch { }
     if ($null -ne $rt) {
+      if ($until -and $rt -ge $until) { $it = $items.GetNext(); continue }
       if ($rt -lt $since) { $old++; if ($old -ge 25) { break } }
       else {
         $old = 0
         $ok = $false
         try { $ok = ($it.Class -eq 43) } catch { }
-        if ($ok) { [void]$cand.Add([pscustomobject]@{ t = $rt; it = $it; fo = $rel }) }
+        if ($ok) { [void]$cand.Add([pscustomobject]@{ t = $rt; it = $it; fo = $rel }); $n++; if ($until -and $n -ge $max) { break } }
       }
     }
     $it = $items.GetNext()
@@ -38,7 +49,8 @@ function Walk($f, $d) {
 }
 Walk $root 1
 $out = New-Object System.Collections.ArrayList
-foreach ($x in ($cand | Sort-Object t | Select-Object -First $max)) {
+$pick = if ($until) { $cand | Sort-Object t -Descending | Select-Object -First $max } else { $cand | Sort-Object t | Select-Object -First $max }
+foreach ($x in $pick) {
   $it = $x.it
   $id = ''
   try { $id = [string]$it.PropertyAccessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x1035001F') } catch { }
