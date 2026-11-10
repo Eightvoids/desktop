@@ -66,6 +66,21 @@ mod outlook {
         ps(script.to_string(), envs, "The download did not finish – check the internet connection and try again.")
     }
 
+    /// Starts a fixed script on its own (it keeps running after Eight Voids closes) – used to install an update.
+    #[cfg(windows)]
+    pub fn spawn_plain(script: &str, envs: Vec<(&'static str, String)>) -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
+        let utf16: Vec<u8> = script.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+        let mut c = std::process::Command::new("powershell.exe");
+        let enc = b64(&utf16);
+        c.args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", enc.as_str()]);
+        for (k, v) in envs {
+            c.env(k, v);
+        }
+        c.creation_flags(0x0800_0000 | 0x0000_0008); // no console window, detached from Eight Voids
+        c.spawn().map(|_| ()).map_err(|e| format!("The update could not start: {e}"))
+    }
+
     #[cfg(windows)]
     fn ps(full: String, envs: Vec<(&'static str, String)>, fallback: &str) -> Result<String, String> {
         use std::os::windows::process::CommandExt;
@@ -91,6 +106,12 @@ mod outlook {
     }
 
     #[cfg(not(windows))]
+    #[allow(dead_code)]
+    pub fn spawn_plain(_script: &str, _envs: Vec<(&'static str, String)>) -> Result<(), String> {
+        Err("In-app updates work on Windows.".into())
+    }
+
+    #[cfg(not(windows))]
     pub fn run_plain(_script: &str, _envs: Vec<(&'static str, String)>) -> Result<String, String> {
         Err("In-app updates work on Windows. On a Mac the new version downloads in the browser.".into())
     }
@@ -99,6 +120,11 @@ mod outlook {
 // ---------- app updates (Windows): download the new installer from the Eight Voids releases page, then open it ----------
 #[cfg(desktop)]
 const UPDATE_DOWNLOAD: &str = include_str!("../ps/update_download.ps1");
+#[cfg(desktop)]
+const UPDATE_APPLY: &str = include_str!("../ps/update_apply.ps1");
+/// A downloaded update the person chose to install later: it installs by itself when Eight Voids is quit.
+#[cfg(desktop)]
+static PENDING: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// The installer is kept in the app's own cache folder as EightVoids-Update-<version>.exe.
 #[cfg(desktop)]
@@ -130,10 +156,69 @@ async fn update_download(app: AppHandle, url: String, version: String) -> Result
     Ok(outs)
 }
 
+/// Installs the update without questions (silent = true, 1.3.7+): a small progress window, then Eight Voids opens again.
+#[cfg(desktop)]
+fn update_apply(app: &AppHandle, version: &str, relaunch: bool) -> Result<(), String> {
+    let p = update_file(app, version)?;
+    if !p.is_file() {
+        return Err("The update has not been downloaded yet.".into());
+    }
+    let exe = if relaunch { std::env::current_exe().map(|x| x.to_string_lossy().to_string()).unwrap_or_default() } else { String::new() };
+    outlook::spawn_plain(UPDATE_APPLY, vec![
+        ("EV_SETUP", p.to_string_lossy().to_string()),
+        ("EV_PID", std::process::id().to_string()),
+        ("EV_EXE", exe),
+    ])
+}
+
+/// Remembers (or forgets) an update to install when Eight Voids is quit.
+#[cfg(desktop)]
+#[tauri::command]
+fn update_pending(app: AppHandle, version: Option<String>) -> Result<(), String> {
+    if let Some(v) = &version {
+        if !update_file(&app, v)?.is_file() {
+            return Err("The update has not been downloaded yet.".into());
+        }
+    }
+    *PENDING.lock().map_err(|e| e.to_string())? = version;
+    Ok(())
+}
+
+/// Called when Eight Voids is quit: a pending update installs quietly (Eight Voids is not reopened).
+#[cfg(desktop)]
+fn update_on_exit(app: &AppHandle) {
+    let v = PENDING.lock().ok().and_then(|mut g| g.take());
+    if let Some(v) = v {
+        let _ = update_apply(app, &v, false);
+    }
+}
+
+#[cfg(desktop)]
+fn update_check_exit(h: &AppHandle, e: &tauri::RunEvent) {
+    if let tauri::RunEvent::Exit = e {
+        update_on_exit(h);
+    }
+}
+
 /// Opens the downloaded installer and closes Eight Voids so the installer can replace it.
 #[cfg(desktop)]
 #[tauri::command]
-fn update_install(app: AppHandle, version: String) -> Result<(), String> {
+fn update_install(app: AppHandle, version: String, silent: Option<bool>) -> Result<(), String> {
+    if silent.unwrap_or(false) {
+        if let Ok(mut g) = PENDING.lock() {
+            *g = None;
+        }
+        update_apply(&app, &version, true)?;
+        let h = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            h.exit(0);
+        });
+        return Ok(());
+    }
+    if let Ok(mut g) = PENDING.lock() {
+        *g = None;
+    }
     let p = update_file(&app, &version)?;
     if !p.is_file() {
         return Err("The update has not been downloaded yet.".into());
@@ -303,7 +388,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.
@@ -326,7 +411,10 @@ pub fn run() {
         }
     });
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("Eight Voids could not start");
+    let app = builder.build(tauri::generate_context!()).expect("Eight Voids could not start");
+    app.run(|_h, _e| {
+        // Desktop: an update the person chose to install later installs when Eight Voids is quit.
+        #[cfg(desktop)]
+        update_check_exit(_h, &_e);
+    });
 }

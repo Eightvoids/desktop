@@ -24,6 +24,10 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.7 – updates like Autodesk, pictures inside emails
+- **Updates (Windows)**: a new version downloads quietly in the background. Then a card says "Eight Voids x.y.z is ready" with **Restart now** (Eight Voids closes, the installer runs with a small progress window in update mode – `/P /UPDATE`, no questions – and Eight Voids opens again by itself) or **Later** (it installs by itself when you quit the app). New command `update_pending`; `update_install` takes `silent`; fixed script `src-tauri/ps/update_apply.ps1` (waits for the app to close, installs, reopens). Versions before 1.3.7 still update once with the normal installer.
+- **Pictures inside emails**: outlook_read and outlook_save_atts also take the pictures placed inside the email text (hidden attachments, png / jpg / gif / bmp / webp / heic, 15 KB or more – small logos and icons are left out), marked `inl: 1`.
+
 ## Version 1.3.6 – lighter on Outlook and the laptop
 - The Outlook helper scripts run at low (below normal) priority, so the laptop stays responsive while emails are read in the background.
 - outlook_read scans each folder with only date, type and id per email (Outlook's SetColumns) and skips empty folders; the full email (text, people, attachments list) is opened only for the emails actually brought in. Much less work for Outlook, especially with many sub-folders and the full-history run.

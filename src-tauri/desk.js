@@ -298,7 +298,7 @@
         if (UP.busy) { st.textContent = 'Updating to version ' + latest.tag + ' – see the card at the bottom right.'; return; }
         if (latest && latest.newer) {
           st.textContent = 'Version ' + latest.tag + ' is ready (you have ' + latest.mine + ').';
-          r3.appendChild(button('Update now', function () { ov.remove(); startUpdate(); }, true));
+          r3.appendChild(button(UP.have === latest.tag.replace(/[^0-9.]/g, '') ? 'Restart now' : 'Update now', function () { ov.remove(); if (UP.have === latest.tag.replace(/[^0-9.]/g, '')) restartNow(); else startUpdate(); }, true));
           r3.appendChild(button('What’s new', function () { ov.remove(); showUpdate(true); }));
         } else st.textContent = latest ? 'You have the latest version (' + latest.mine + '). Checked ' + new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.' : 'Not checked yet.';
         r3.appendChild(button('Check for updates', function () { st.textContent = 'Checking…'; r3.innerHTML = ''; checkUpdate(true).then(upRow); }));
@@ -326,6 +326,17 @@
         latest = { tag: rel.tag_name.replace(/^v/, ''), mine: mine, newer: newer(rel.tag_name, mine), notes: String(rel.body || '').trim(), exe: asset('EightVoids-Windows-Setup.exe'), dmg: asset('EightVoids-macOS.dmg'), at: Date.now() };
         if (latest.newer) {
           return ready.then(function () {
+            /* Windows (1.3.7+): like Autodesk – the new version downloads quietly in the background first */
+            if (isWin() && latest.exe && t.core && t.core.invoke) {
+              return prefetch().then(function (ok) {
+                if (ok) {
+                  var later0 = S.updLater && S.updLater.tag === latest.tag && S.updLater.until > Date.now();
+                  if (manual || !later0) showReady();
+                  if (S.seenVersion !== latest.tag) { S.seenVersion = latest.tag; save(); notify('Eight Voids ' + latest.tag + ' is ready', 'Downloaded in the background. Restart Eight Voids to finish – or it installs by itself when you quit.'); }
+                } else if (manual) showUpdate(false);
+                return latest;
+              });
+            }
             var later = S.updLater && S.updLater.tag === latest.tag && S.updLater.until > Date.now();
             if (manual || !later) showUpdate(false);
             if (S.seenVersion !== latest.tag) { S.seenVersion = latest.tag; save(); notify('Eight Voids update', 'Version ' + latest.tag + ' of the desktop app is ready. Click Update now in the app.'); }
@@ -335,6 +346,47 @@
         if (manual) toast('You have the latest version (' + mine + ').');
         return latest;
       }).catch(function () { if (manual) toast('Updates could not be checked – are you online?'); return null; });
+  }
+  /* quiet background download of the new installer (nothing is installed until you restart or quit) */
+  function vOf() { return latest.tag.replace(/[^0-9.]/g, ''); }
+  function prefetch() {
+    var t = T(), v = vOf();
+    if (UP.have === v) return Promise.resolve(true);
+    if (UP.dl) { if (UP.dlv === v) return UP.dl; }
+    UP.dlv = v;
+    UP.dl = t.path.appCacheDir().then(function (dir) { return t.path.join(dir, 'EightVoids-Update-' + v + '.exe'); })
+      .then(function (p) { return t.fs.exists(p).then(function (x) { if (x) return true; return t.core.invoke('update_download', { url: latest.exe.url, version: v }).then(function () { return true; }); }); })
+      .then(function () { UP.have = v; UP.dl = null; return true; }, function () { UP.dl = null; return false; });
+    return UP.dl;
+  }
+  function showReady() {
+    if (!latest || UP.busy) return; var d = card(); if (!d) return; d.innerHTML = '';
+    var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Eight Voids ' + latest.tag + ' is ready'));
+    var x = el('button', 'evd-x', '×'); x.setAttribute('aria-label', 'Close'); x.onclick = later; tt.appendChild(x); d.appendChild(tt);
+    d.appendChild(el('small', '', 'Downloaded in the background. Restart to finish – it takes about a minute, then Eight Voids opens again. Your sign-in, settings and work stay.'));
+    var nb = null;
+    if (latest.notes) { nb = el('div', 'n', latest.notes.slice(0, 1200)); nb.hidden = true; d.appendChild(nb); }
+    var r = el('div', 'evd-row');
+    r.appendChild(button('Restart now', restartNow, true));
+    r.appendChild(button('Later', later));
+    if (nb) r.appendChild(button('What’s new', function () { nb.hidden = !nb.hidden; }));
+    d.appendChild(r);
+    function later() {
+      S.updLater = { tag: latest.tag, until: Date.now() + 20 * 3600 * 1000 }; save(); d.remove();
+      T().core.invoke('update_pending', { version: vOf() }).then(function () { toast('Eight Voids ' + latest.tag + ' installs by itself when you quit the app (tray icon › Quit).'); }, function () {});
+    }
+  }
+  function restartNow() {
+    var t = T(); if (UP.busy) return; UP.busy = true; var d = card(); d.innerHTML = '';
+    var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Installing Eight Voids ' + latest.tag + '…')); d.appendChild(tt);
+    d.appendChild(el('small', '', 'Eight Voids closes now, installs the update with a small progress window and opens again by itself.'));
+    setTimeout(function () {
+      t.core.invoke('update_install', { version: vOf(), silent: true }).catch(function (e) {
+        UP.busy = false; d.innerHTML = ''; var t2 = el('div', 't'); t2.appendChild(el('b', '', 'The update did not start')); d.appendChild(t2);
+        d.appendChild(el('small', '', String((e && e.message) || e || '').slice(0, 200)));
+        var r2 = el('div', 'evd-row'); r2.appendChild(button('Install with the installer', function () { UP.busy = false; startUpdate(); }, true)); d.appendChild(r2);
+      });
+    }, 1200);
   }
   function card() {
     var d = document.getElementById('evd-upd');

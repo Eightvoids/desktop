@@ -20,6 +20,14 @@ function EvWanted($rel, $want) {
   }
   return $false
 }
+# a picture placed inside the email text (hidden attachment): kept when it is a real picture, not a tiny logo / icon
+function EvInlinePic($a) {
+  try { if ($a.Type -ne 1) { return $false } } catch { return $false }
+  $n = ''; try { $n = [string]$a.FileName } catch { }
+  if ($n -notmatch '\.(png|jpe?g|gif|bmp|webp|heic)$') { return $false }
+  $sz = 0; try { $sz = [int64]$a.Size } catch { }
+  return ($sz -ge 15000)
+}
 function EvAttOk($a) {
   try { if ($a.PropertyAccessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x7FFE000B')) { return $false } } catch { }
   try { if ($a.Type -ne 1) { return $false } } catch { }

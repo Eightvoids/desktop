@@ -72,7 +72,10 @@ foreach ($x in $pick) {
   $body = ''
   try { $body = [string]$it.Body; if ($body.Length -gt 200000) { $body = $body.Substring(0, 200000) } } catch { }
   $att = New-Object System.Collections.ArrayList
-  try { foreach ($a in $it.Attachments) { if (EvAttOk $a) { [void]$att.Add(@{ n = [string]$a.FileName; size = [int64]$a.Size }) } } } catch { }
+  try { foreach ($a in $it.Attachments) {
+    if (EvAttOk $a) { [void]$att.Add(@{ n = [string]$a.FileName; size = [int64]$a.Size }) }
+    elseif (EvInlinePic $a) { [void]$att.Add(@{ n = [string]$a.FileName; size = [int64]$a.Size; inl = 1 }) }
+  } } catch { }
   [void]$out.Add(@{ id = $id; entry = [string]$it.EntryID; s = [string]$it.Subject; f = [string]$it.SenderName; fe = [string]$fe;
     to = [string]$it.To; cc = [string]$it.CC; d = $x.t.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [Globalization.CultureInfo]::InvariantCulture); fo = $x.fo; b = $body; att = @($att) })
 }
