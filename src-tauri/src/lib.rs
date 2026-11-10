@@ -77,8 +77,33 @@ mod outlook {
         for (k, v) in envs {
             c.env(k, v);
         }
-        c.creation_flags(0x0800_0000 | 0x0000_0008); // no console window, detached from Eight Voids
-        c.spawn().map(|_| ()).map_err(|e| format!("The update could not start: {e}"))
+        // no console window, own process group (keeps running after Eight Voids closes);
+        // also leaves any job Eight Voids may run in, when Windows allows it
+        c.creation_flags(0x0800_0000 | 0x0000_0200 | 0x0100_0000);
+        match c.spawn() {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                c.creation_flags(0x0800_0000 | 0x0000_0200);
+                c.spawn().map(|_| ()).map_err(|e| format!("The update could not start: {e}"))
+            }
+        }
+    }
+
+    /// Starts the downloaded installer itself, straight from Eight Voids (the way Tauri's own updater does it).
+    #[cfg(windows)]
+    pub fn start_installer(path: &std::path::Path, args: &[&str]) -> Result<u32, String> {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new(path);
+        c.args(args);
+        c.creation_flags(0x0000_0200 | 0x0100_0000);
+        match c.spawn() {
+            Ok(ch) => Ok(ch.id()),
+            Err(_) => {
+                let mut c2 = std::process::Command::new(path);
+                c2.args(args);
+                c2.spawn().map(|ch| ch.id()).map_err(|e| format!("The installer could not start: {e}"))
+            }
+        }
     }
 
     #[cfg(windows)]
@@ -108,6 +133,11 @@ mod outlook {
     #[cfg(not(windows))]
     #[allow(dead_code)]
     pub fn spawn_plain(_script: &str, _envs: Vec<(&'static str, String)>) -> Result<(), String> {
+        Err("In-app updates work on Windows.".into())
+    }
+
+    #[cfg(not(windows))]
+    pub fn start_installer(_path: &std::path::Path, _args: &[&str]) -> Result<u32, String> {
         Err("In-app updates work on Windows.".into())
     }
 
@@ -156,19 +186,27 @@ async fn update_download(app: AppHandle, url: String, version: String) -> Result
     Ok(outs)
 }
 
-/// Installs the update without questions (silent = true, 1.3.7+): a small progress window, then Eight Voids opens again.
+/// Installs the update without questions (silent = true): no window, then Eight Voids opens again.
 #[cfg(desktop)]
 fn update_apply(app: &AppHandle, version: &str, relaunch: bool) -> Result<(), String> {
     let p = update_file(app, version)?;
     if !p.is_file() {
         return Err("The update has not been downloaded yet.".into());
     }
+    // 1.3.9: the installer is started straight from Eight Voids (silent update mode). It closes Eight Voids by itself
+    // if it is still open, installs, and with /R opens it again. A small watcher reopens Eight Voids if the installer
+    // did not, and writes EightVoids-Update.log next to the download (to see what happened).
+    let args: &[&str] = if relaunch { &["/S", "/UPDATE", "/R"] } else { &["/S", "/UPDATE"] };
+    let ipid = outlook::start_installer(&p, args)?;
     let exe = if relaunch { std::env::current_exe().map(|x| x.to_string_lossy().to_string()).unwrap_or_default() } else { String::new() };
-    outlook::spawn_plain(UPDATE_APPLY, vec![
-        ("EV_SETUP", p.to_string_lossy().to_string()),
-        ("EV_PID", std::process::id().to_string()),
+    let log = p.with_file_name("EightVoids-Update.log").to_string_lossy().to_string();
+    let _ = outlook::spawn_plain(UPDATE_APPLY, vec![
+        ("EV_IPID", ipid.to_string()),
         ("EV_EXE", exe),
-    ])
+        ("EV_LOG", log),
+        ("EV_V", version.chars().filter(|c| c.is_ascii_digit() || *c == '.').take(20).collect::<String>()),
+    ]);
+    Ok(())
 }
 
 /// Gives a drawing file its title: renames ONE file inside its own folder (never moves, replaces or deletes).

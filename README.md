@@ -24,6 +24,11 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.9 – Restart now really installs the update
+- 1.3.7 / 1.3.8: Restart now closed and reopened Eight Voids without installing (the update helper started by the app did not run the installer). Now the installer is started straight from Eight Voids, the way Tauri's own updater does it (`/S /UPDATE /R` – silent, update mode, reopen). It closes Eight Voids by itself, installs, and opens it again; a small watcher (`update_apply.ps1`) reopens Eight Voids if needed and writes `EightVoids-Update.log` next to the download.
+- After every Restart now the app checks, once it is open again, that the new version is really installed. If not, a card says so with **Install with the installer** (the normal installer – the way that always works) and **Try again**. If Eight Voids does not close within 40 seconds, the same card shows.
+- From 1.3.7 or 1.3.8: install 1.3.9 once with the normal installer (EightVoids-Windows-Setup.exe from the releases page); updates after that run inside the app.
+
 ## Version 1.3.8 – updates without any installer window, drawing titles
 - Restart now (or quitting the app with an update waiting) installs the new version completely in the background: `update_apply.ps1` runs the installer with `/S /UPDATE` (silent, update mode – no window, no questions), then reopens Eight Voids. Inside the app a full-window "Updating Eight Voids to x.y.z" screen shows until it closes.
 - 1.3.7 itself still showed the small installer progress window once; from 1.3.8 on, updates are fully inside the app.

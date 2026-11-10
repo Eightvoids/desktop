@@ -379,17 +379,42 @@
   }
   function restartNow() {
     var t = T(); if (UP.busy) return; UP.busy = true; var d = card(); d.innerHTML = '';
+    /* remembered on disk: after Eight Voids opens again it checks that the new version is really there */
+    S.updTry = { v: vOf(), at: Date.now() }; save();
     var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Installing Eight Voids ' + latest.tag + '…')); d.appendChild(tt);
     d.appendChild(el('small', '', 'Eight Voids closes for a moment, installs the update quietly and opens again by itself.'));
     /* the whole window shows the update, so nothing else pops up */
     var ov = el('div', 'evd-upov'); ov.innerHTML = '<div><div class="evd-spin"></div><b>Updating Eight Voids to ' + latest.tag + '</b><small>Eight Voids closes for a moment and opens again by itself – about a minute. Nothing to click.</small></div>'; document.body.appendChild(ov);
     setTimeout(function () {
+      /* safety: if Eight Voids is still open after 40 seconds, say so and offer the normal installer */
+      setTimeout(function () { if (ov.parentNode) { ov.remove(); failCard('Eight Voids did not close for the update.'); } }, 40000);
       t.core.invoke('update_install', { version: vOf(), silent: true }).catch(function (e) {
-        UP.busy = false; d.innerHTML = ''; var t2 = el('div', 't'); t2.appendChild(el('b', '', 'The update did not start')); d.appendChild(t2);
+        ov.remove(); UP.busy = false; d.innerHTML = ''; var t2 = el('div', 't'); t2.appendChild(el('b', '', 'The update did not start')); d.appendChild(t2);
         d.appendChild(el('small', '', String((e && e.message) || e || '').slice(0, 200)));
         var r2 = el('div', 'evd-row'); r2.appendChild(button('Install with the installer', function () { UP.busy = false; startUpdate(); }, true)); d.appendChild(r2);
       });
     }, 1200);
+  }
+  /* the update did not install: one clear card with the way that always works (the normal installer) */
+  function failCard(why) {
+    UP.busy = false; var d = card(); if (!d) return; d.innerHTML = '';
+    var v = (S.updTry && S.updTry.v) || (latest && latest.tag) || '';
+    var tt = el('div', 't'); tt.appendChild(el('b', '', 'Eight Voids ' + v + ' was not installed yet')); var x = el('button', 'evd-x', '×'); x.onclick = function () { d.remove(); }; tt.appendChild(x); d.appendChild(tt);
+    d.appendChild(el('small', '', (why ? why + ' ' : '') + 'Click Install with the installer – Eight Voids closes, the installer opens (if Windows asks: More info › Run anyway), then open Eight Voids again. Your sign-in and settings stay.'));
+    var r = el('div', 'evd-row');
+    r.appendChild(button('Install with the installer', function () { S.updTry = null; save(); (latest ? Promise.resolve(latest) : checkUpdate(false)).then(function () { if (latest && latest.exe) { UP.busy = false; startUpdate(); } else openOutside('https://github.com/Eightvoids/desktop/releases/latest'); }); }, true));
+    r.appendChild(button('Try again', function () { restartNow(); }));
+    d.appendChild(r);
+  }
+  /* after a Restart now: is the new version really installed? */
+  function afterTry() {
+    var t = T(); if (!t || !t.app || !S.updTry) return;
+    t.app.getVersion().then(function (mine) {
+      var tr = S.updTry; if (!tr) return;
+      if (!newer(tr.v, mine)) { S.updTry = null; save(); toast('Eight Voids is updated to ' + mine + '.'); return; }
+      if (Date.now() - tr.at > 3 * 24 * 3600 * 1000) { S.updTry = null; save(); return; }
+      failCard('The quick update did not finish (still ' + mine + ').');
+    }).catch(function () {});
   }
   function card() {
     var d = document.getElementById('evd-upd');
@@ -458,7 +483,7 @@
   }
   window.addEventListener('load', function () {
     onTray();
-    if (/^app\./i.test(H)) { setTimeout(function () { checkUpdate(false); }, 8000); setInterval(function () { checkUpdate(false); }, 6 * 3600 * 1000); }
+    if (/^app\./i.test(H)) { setTimeout(function () { ready.then(function () { return checkUpdate(false); }).then(afterTry, afterTry); }, 8000); setInterval(function () { checkUpdate(false); }, 6 * 3600 * 1000); }
     if (!navigator.onLine) offline(true);
   });
 })();
