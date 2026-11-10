@@ -21,6 +21,12 @@ function Collect($f) {
     $r = $null
     try { $r = $items.Restrict("[ReceivedTime] < '" + $until.ToString('g') + "'") } catch { }
     if ($r -and $r.Count -gt 0) { $items = $r }
+  } else {
+    # new emails only (1.3.6): Outlook's own index finds them at once – no sorting of the whole folder, so Outlook stays responsive.
+    # A minute earlier than the start, because the filter works in whole minutes; doubles are skipped by the platform.
+    $r = $null
+    try { $r = $items.Restrict("[ReceivedTime] >= '" + $since.AddMinutes(-1).ToString('g') + "'") } catch { }
+    if ($null -ne $r) { $cnt = -1; try { $cnt = $r.Count } catch { }; if ($cnt -eq 0) { return }; if ($cnt -gt 0) { $items = $r } }
   }
   $items.Sort('[ReceivedTime]', $true)
   try { $items.SetColumns('ReceivedTime,MessageClass,EntryID') } catch { }
