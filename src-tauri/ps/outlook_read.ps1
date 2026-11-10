@@ -1,5 +1,7 @@
 $ol = EvOutlook
 $ns = $ol.GetNamespace('MAPI')
+# Light reading (1.3.6): while scanning, Outlook only hands over date, type and id of each email;
+# the full email is opened only for the ones that are actually brought in.
 $root = $ns.DefaultStore.GetRootFolder()
 $since = [datetime]::Parse($env:EV_SINCE, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime()
 # one folder per line (Windows PowerShell 5.1 reads a JSON list as a single item)
@@ -13,6 +15,7 @@ $cand = New-Object System.Collections.ArrayList
 function Collect($f) {
   $rel = EvRel $f
   $items = $f.Items
+  try { if ($items.Count -eq 0) { return } } catch { }
   if ($until) {
     # jump straight to the older part of the folder; if Outlook refuses the filter (or finds nothing), newer items are skipped one by one instead
     $r = $null
@@ -20,6 +23,7 @@ function Collect($f) {
     if ($r -and $r.Count -gt 0) { $items = $r }
   }
   $items.Sort('[ReceivedTime]', $true)
+  try { $items.SetColumns('ReceivedTime,MessageClass,EntryID') } catch { }
   # GetFirst / GetNext follow the sort (newest first). A few older items in a row end the folder.
   $old = 0
   $n = 0
@@ -33,8 +37,8 @@ function Collect($f) {
       else {
         $old = 0
         $ok = $false
-        try { $ok = ($it.Class -eq 43) } catch { }
-        if ($ok) { [void]$cand.Add([pscustomobject]@{ t = $rt; it = $it; fo = $rel }); $n++; if ($until -and $n -ge $max) { break } }
+        try { $ok = ([string]$it.MessageClass -like 'IPM.Note*') } catch { }
+        if ($ok) { $e = ''; try { $e = [string]$it.EntryID } catch { }; if ($e) { [void]$cand.Add([pscustomobject]@{ t = $rt; e = $e; fo = $rel }); $n++; if ($until -and $n -ge $max) { break } } }
       }
     }
     $it = $items.GetNext()
@@ -51,7 +55,9 @@ Walk $root 1
 $out = New-Object System.Collections.ArrayList
 $pick = if ($until) { $cand | Sort-Object t -Descending | Select-Object -First $max } else { $cand | Sort-Object t | Select-Object -First $max }
 foreach ($x in $pick) {
-  $it = $x.it
+  $it = $null
+  try { $it = $ns.GetItemFromID($x.e) } catch { }
+  if ($null -eq $it) { continue }
   $id = ''
   try { $id = [string]$it.PropertyAccessor.GetProperty('http://schemas.microsoft.com/mapi/proptag/0x1035001F') } catch { }
   if (-not $id) { $id = 'entry:' + $it.EntryID }

@@ -2,6 +2,8 @@
 # It never sends, moves, deletes or changes any email.
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+# run at low priority so the laptop and Outlook stay responsive while emails are read in the background
+try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch { }
 function EvOutlook {
   try { return [Runtime.InteropServices.Marshal]::GetActiveObject('Outlook.Application') } catch { }
   return New-Object -ComObject Outlook.Application

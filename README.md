@@ -24,6 +24,11 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.6 – lighter on Outlook and the laptop
+- The Outlook helper scripts run at low (below normal) priority, so the laptop stays responsive while emails are read in the background.
+- outlook_read scans each folder with only date, type and id per email (Outlook's SetColumns) and skips empty folders; the full email (text, people, attachments list) is opened only for the emails actually brought in. Much less work for Outlook, especially with many sub-folders and the full-history run.
+- The workspace (platform) reads all ticked folders in one run and slows down by itself during work hours (Outlook speed setting in Connections › This computer).
+
 ## Version 1.3.5 – full email history
 - outlook_read takes an optional "until": emails received before that time, newest first, at most "max" per folder. The workspace uses it to bring in the whole mailbox history in rounds of 100 (Connections › This computer › Outlook bridge › All dates), while new emails keep coming in every 5 minutes.
 - Each folder jumps straight to the older part with Outlook's own filter; if Outlook refuses the filter, newer emails are skipped one by one instead.
