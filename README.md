@@ -24,6 +24,13 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.2 – Updates inside the app
+- **Desktop (Windows)**: the app checks for a new version when it starts and every 6 hours. An "Update ready" card shows the new version and what's new. **Update now** downloads the installer inside the app with a progress bar and the time left (`update_download`, fixed script `src-tauri/ps/update_download.ps1`, only from this repository's Releases page), then opens it (`update_install`); Eight Voids closes while it installs. **Later** hides the card for 20 hours. Desktop settings › Updates has **Check for updates**.
+- **Mac**: the same card; Update now downloads the new .dmg in the browser.
+- **Android**: the app checks the "Eight Voids mobile" releases; Update now downloads EightVoids-Android.apk in the phone's browser – open it to install. App settings › Updates has **Check for updates**. For updating over the installed app (instead of removing it first), the permanent Android key must be added once as the secrets ANDROID_KEYSTORE_B64 and ANDROID_KEYSTORE_PASSWORD.
+- **iPhone / iPad**: updates come through TestFlight / the App Store once the Apple Developer account exists.
+- Nothing installs without the person's click.
+
 ## Version 1.3.0 – Files & Outlook (no Microsoft 365 approval needed)
 - **Organise folders** (workspace › Connections › This computer, or Design Files): scans the synced SharePoint / OneDrive folder, sorts every file into the official structure (drawing number → rules → optional AI), you check the list, then it **copies** – any file size, originals never changed, an existing file is never replaced.
 - **Large files**: uploaded straight to Eight Voids storage (EV_BIG_STORAGE) in 8 MB pieces, 4 at a time; continues after a break.

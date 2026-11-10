@@ -84,6 +84,9 @@
     '.evm-b{border:1px solid var(--evm-line);background:var(--evm-soft);color:var(--evm-fg);border-radius:99px;padding:9px 16px;font:inherit}' +
     '.evm-off{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:2147483001;padding:7px 14px;border-radius:99px;background:#8a5a12;color:#fff;font:13px system-ui,sans-serif;max-width:calc(100vw - 24px);text-align:center}' +
     '.evm-toast{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483001;padding:12px 14px;border-radius:12px;background:var(--evm-bg);color:var(--evm-fg);box-shadow:0 8px 30px rgba(0,0,0,.3);font:14px system-ui,sans-serif}' +
+    '.evm-upd{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:2147483002;padding:14px 16px;border-radius:14px;background:var(--evm-bg);color:var(--evm-fg);box-shadow:0 10px 34px rgba(0,0,0,.3);font:14px system-ui,-apple-system,sans-serif;display:grid;gap:8px;max-width:560px;margin:0 auto}' +
+    '.evm-upd .t{display:flex;align-items:center;gap:8px}.evm-upd .t b{flex:1}.evm-upd small{color:var(--evm-mute);line-height:1.4}.evm-upd .n{max-height:110px;overflow:auto;white-space:pre-wrap;font-size:12.5px;color:var(--evm-mute);background:var(--evm-soft);border-radius:8px;padding:8px 10px}' +
+    '.evm-upd .r{display:flex;gap:8px;flex-wrap:wrap}.evm-b.p{background:#66753A;border-color:#66753A;color:#fff}.evm-dot{width:8px;height:8px;border-radius:50%;background:#66753A;flex:none}' +
     ':root{--evm-bg:#fff;--evm-fg:#1d2020;--evm-mute:#5f6763;--evm-line:#dfe3dc;--evm-soft:#f3f5f1}' +
     '@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--evm-bg:#1f2322;--evm-fg:#eceeeb;--evm-mute:#a7aea9;--evm-line:#353b39;--evm-soft:#2a2f2d}}' +
     ':root[data-theme="dark"]{--evm-bg:#1f2322;--evm-fg:#eceeeb;--evm-mute:#a7aea9;--evm-line:#353b39;--evm-soft:#2a2f2d}';
@@ -138,11 +141,67 @@
     s1.appendChild(el('p', '', 'Shown while Eight Voids is open or running in the background.')); s1.appendChild(tb); box.appendChild(s1);
     var s2 = el('div', 'evm-s'); s2.appendChild(el('b', '', 'Site photos'));
     s2.appendChild(el('p', '', 'Images › Capture uses the phone camera or the photo library. Photos with people or vehicle plates are held back, as in the browser.')); box.appendChild(s2);
-    var s3 = el('div', 'evm-s'); var v = el('p', '', 'Eight Voids app'); s3.appendChild(v); box.appendChild(s3);
-    try { var t = T(); if (t && t.app && t.app.getVersion) t.app.getVersion().then(function (ver) { v.textContent = 'Eight Voids app · version ' + ver; }); } catch (e) {}
+    var s3 = el('div', 'evm-s'); s3.appendChild(el('b', '', 'Updates')); var v = el('p', '', 'Eight Voids app'); s3.appendChild(v);
+    var ur = el('div', 'evm-row'); s3.appendChild(ur); box.appendChild(s3);
+    function upRow() {
+      ur.innerHTML = '';
+      if (UPM && UPM.newer) { v.textContent = 'Version ' + UPM.tag + ' is ready (you have ' + UPM.mine + ').'; var ub = el('button', 'evm-b p', 'Update now'); ub.onclick = function () { ov.remove(); getUpdate(); }; ur.appendChild(ub); }
+      else if (UPM) v.textContent = 'Eight Voids app · version ' + UPM.mine + ' – the latest version.';
+      var cb2 = el('button', 'evm-b', 'Check for updates'); cb2.onclick = function () { v.textContent = 'Checking…'; checkUpdate(true).then(upRow); }; ur.appendChild(cb2);
+    }
+    try { var t = T(); if (t && t.app && t.app.getVersion) t.app.getVersion().then(function (ver) { v.textContent = 'Eight Voids app · version ' + ver; upRow(); }); } catch (e) {}
+    s3.appendChild(el('p', '', 'The workspace itself always updates automatically. A new app is only needed when the app’s own features change.'));
     ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
     document.body.appendChild(ov);
   }
+
+  /* ---------- updates: checked when the app opens and every 6 hours ----------
+     Android: "Update now" downloads the new app (EightVoids-Android.apk) in the phone's browser; open it to install.
+     iPhone / iPad: updates come through the App Store / TestFlight once the Apple account exists. */
+  var UPM = null, ANDROID = /Android/i.test(navigator.userAgent);
+  function newer(a, b) { a = String(a).replace(/^[a-z-]*v/i, '').split('.').map(Number); b = String(b).replace(/^[a-z-]*v/i, '').split('.').map(Number); for (var i = 0; i < 3; i++) { if ((a[i] || 0) > (b[i] || 0)) return true; if ((a[i] || 0) < (b[i] || 0)) return false; } return false; }
+  function checkUpdate(manual) {
+    var t = T(); if (!t || !t.app || !t.app.getVersion) return Promise.resolve(null);
+    if (!ANDROID) { if (manual) toast('On iPhone and iPad, updates come from the App Store.'); return t.app.getVersion().then(function (mine) { UPM = { mine: mine, newer: false }; return UPM; }); }
+    return Promise.all([t.app.getVersion(), fetch('https://api.github.com/repos/Eightvoids/desktop/releases?per_page=20', { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : []; })])
+      .then(function (r) {
+        var mine = r[0], rel = (r[1] || []).filter(function (x) { return /^mobile-v/.test(x.tag_name || '') && (x.assets || []).some(function (a) { return a.name === 'EightVoids-Android.apk'; }); })
+          .sort(function (a, b) { return newer(a.tag_name, b.tag_name) ? -1 : 1; })[0];
+        if (!rel) { UPM = { mine: mine, newer: false }; if (manual) toast('You have the latest version (' + mine + ').'); return UPM; }
+        var apk = rel.assets.filter(function (a) { return a.name === 'EightVoids-Android.apk'; })[0];
+        UPM = { tag: rel.tag_name.replace(/^mobile-v/, ''), mine: mine, newer: newer(rel.tag_name, mine), url: apk.browser_download_url, size: apk.size, notes: String(rel.body || '').trim() };
+        if (UPM.newer) {
+          var later = S.updLater && S.updLater.tag === UPM.tag && S.updLater.until > Date.now();
+          if (manual || !later) showUpdate();
+          if (S.seenVersion !== UPM.tag) { S.seenVersion = UPM.tag; save(); notify('Eight Voids update', 'Version ' + UPM.tag + ' of the app is ready. Tap Update now in the app.'); }
+        } else if (manual) toast('You have the latest version (' + mine + ').');
+        return UPM;
+      }).catch(function () { if (manual) toast('Updates could not be checked – are you online?'); return null; });
+  }
+  function showUpdate() {
+    if (!UPM || !document.body) return;
+    var d = document.getElementById('evm-upd'); if (d) d.remove();
+    d = el('div', 'evm-upd'); d.id = 'evm-upd'; d.setAttribute('role', 'status');
+    var tt = el('div', 't'); tt.appendChild(el('span', 'evm-dot')); tt.appendChild(el('b', '', 'Update ready – Eight Voids ' + UPM.tag));
+    var x = el('button', 'evm-x', '×'); x.setAttribute('aria-label', 'Close'); x.onclick = later; tt.appendChild(x); d.appendChild(tt);
+    d.appendChild(el('small', '', 'You have version ' + UPM.mine + '. Download ' + (UPM.size / 1048576).toFixed(0) + ' MB, then open the file to install it. Your sign-in and settings stay.'));
+    var nb = null; if (UPM.notes) { nb = el('div', 'n', UPM.notes.slice(0, 900)); nb.hidden = true; d.appendChild(nb); }
+    var r = el('div', 'r'); var ub = el('button', 'evm-b p', 'Update now'); ub.onclick = function () { d.remove(); getUpdate(); }; r.appendChild(ub);
+    if (nb) { var wb = el('button', 'evm-b', 'What’s new'); wb.onclick = function () { nb.hidden = !nb.hidden; }; r.appendChild(wb); }
+    var lb = el('button', 'evm-b', 'Later'); lb.onclick = later; r.appendChild(lb); d.appendChild(r);
+    document.body.appendChild(d);
+    function later() { S.updLater = { tag: UPM.tag, until: Date.now() + 20 * 3600 * 1000 }; save(); d.remove(); }
+  }
+  function getUpdate() {
+    if (!UPM || !UPM.url) return;
+    openOutside(UPM.url);
+    toast('The new version is downloading – open EightVoids-Android.apk from the notification when it finishes, then tap Install.');
+  }
+  window.addEventListener('load', function () {
+    if (!/^app\./i.test(H)) return;
+    setTimeout(function () { checkUpdate(false); }, 8000);
+    setInterval(function () { checkUpdate(false); }, 6 * 3600 * 1000);
+  });
 
   /* what the workspace can use (same names as the desktop app) */
   window.evDesktop = {
@@ -150,6 +209,7 @@
     isMobile: true,
     notify: notify,
     settings: openSettings,
+    checkUpdate: function () { return checkUpdate(true); },
     folder: function () { return Promise.resolve(null); },
     openOutside: openOutside
   };

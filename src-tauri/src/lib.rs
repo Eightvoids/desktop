@@ -56,8 +56,18 @@ mod outlook {
     /// Runs one of the fixed scripts above (never anything sent by a page) with its settings in environment variables.
     #[cfg(windows)]
     pub fn run(script: &str, envs: Vec<(&'static str, String)>) -> Result<String, String> {
+        ps(format!("{}\n{}", COMMON, script), envs, "Outlook did not answer – is classic Outlook open?")
+    }
+
+    /// Runs a fixed script without the Outlook helpers (used by the app update download).
+    #[cfg(windows)]
+    pub fn run_plain(script: &str, envs: Vec<(&'static str, String)>) -> Result<String, String> {
+        ps(script.to_string(), envs, "The download did not finish – check the internet connection and try again.")
+    }
+
+    #[cfg(windows)]
+    fn ps(full: String, envs: Vec<(&'static str, String)>, fallback: &str) -> Result<String, String> {
         use std::os::windows::process::CommandExt;
-        let full = format!("{}\n{}", COMMON, script);
         let utf16: Vec<u8> = full.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
         let mut c = std::process::Command::new("powershell.exe");
         let enc = b64(&utf16);
@@ -69,7 +79,7 @@ mod outlook {
         let o = c.output().map_err(|e| format!("PowerShell could not start: {e}"))?;
         if !o.status.success() {
             let err: String = String::from_utf8_lossy(&o.stderr).chars().take(400).collect();
-            return Err(if err.trim().is_empty() { "Outlook did not answer – is classic Outlook open?".into() } else { err });
+            return Err(if err.trim().is_empty() { fallback.to_string() } else { err });
         }
         Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
     }
@@ -78,6 +88,64 @@ mod outlook {
     pub fn run(_script: &str, _envs: Vec<(&'static str, String)>) -> Result<String, String> {
         Err("The Outlook bridge works on Windows with classic Outlook.".into())
     }
+
+    #[cfg(not(windows))]
+    pub fn run_plain(_script: &str, _envs: Vec<(&'static str, String)>) -> Result<String, String> {
+        Err("In-app updates work on Windows. On a Mac the new version downloads in the browser.".into())
+    }
+}
+
+// ---------- app updates (Windows): download the new installer from the Eight Voids releases page, then open it ----------
+#[cfg(desktop)]
+const UPDATE_DOWNLOAD: &str = include_str!("../ps/update_download.ps1");
+
+/// The installer is kept in the app's own cache folder as EightVoids-Update-<version>.exe.
+#[cfg(desktop)]
+fn update_file(app: &AppHandle, version: &str) -> Result<std::path::PathBuf, String> {
+    let v: String = version.chars().filter(|c| c.is_ascii_digit() || *c == '.').take(20).collect();
+    if v.is_empty() || v.starts_with('.') {
+        return Err("No version given.".into());
+    }
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join(format!("EightVoids-Update-{v}.exe")))
+}
+
+/// Downloads the new installer (only from the Eight Voids GitHub releases). The page shows the progress by
+/// reading the size of the ".part" file while this runs.
+#[cfg(desktop)]
+#[tauri::command]
+async fn update_download(app: AppHandle, url: String, version: String) -> Result<String, String> {
+    const OK: &str = "https://github.com/Eightvoids/desktop/releases/download/";
+    if !url.starts_with(OK) || !url.ends_with(".exe") || url.contains("..") || url.contains('?') {
+        return Err("This is not an Eight Voids installer link.".into());
+    }
+    let out = update_file(&app, &version)?;
+    let outs = out.to_string_lossy().to_string();
+    let target = outs.clone();
+    tauri::async_runtime::spawn_blocking(move || outlook::run_plain(UPDATE_DOWNLOAD, vec![("EV_URL", url), ("EV_OUT", target)]))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(outs)
+}
+
+/// Opens the downloaded installer and closes Eight Voids so the installer can replace it.
+#[cfg(desktop)]
+#[tauri::command]
+fn update_install(app: AppHandle, version: String) -> Result<(), String> {
+    let p = update_file(&app, &version)?;
+    if !p.is_file() {
+        return Err("The update has not been downloaded yet.".into());
+    }
+    std::process::Command::new(&p)
+        .spawn()
+        .map_err(|e| format!("The installer could not start: {e}"))?;
+    let h = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        h.exit(0);
+    });
+    Ok(())
 }
 
 #[cfg(desktop)]
@@ -139,10 +207,15 @@ fn setup_main(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         std::thread::spawn(move || {
             if let Ok(list) = std::fs::read_dir(&dir) {
                 for e in list.flatten() {
-                    let old = e.metadata().and_then(|m| m.modified()).ok()
-                        .and_then(|t| t.elapsed().ok()).map(|d| d.as_secs() > 3600).unwrap_or(false);
-                    if old && e.file_name().to_string_lossy().starts_with("evatt-") {
+                    let age = e.metadata().and_then(|m| m.modified()).ok()
+                        .and_then(|t| t.elapsed().ok()).map(|d| d.as_secs()).unwrap_or(0);
+                    let name = e.file_name().to_string_lossy().to_string();
+                    if age > 3600 && name.starts_with("evatt-") {
                         let _ = std::fs::remove_dir_all(e.path());
+                    }
+                    // installers of earlier updates are removed a day later
+                    if age > 86400 && name.starts_with("EightVoids-Update-") {
+                        let _ = std::fs::remove_file(e.path());
                     }
                 }
             }
@@ -215,9 +288,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| setup_main(app));
 
-    // Desktop: the Outlook bridge (read only).
+    // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, update_download, update_install]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.

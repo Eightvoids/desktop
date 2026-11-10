@@ -72,6 +72,10 @@
     '.evd-box .evd-sw{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:10px;cursor:pointer;margin:8px 0!important;text-align:left!important;font:inherit;color:inherit}.evd-box .evd-sw input{flex:none;width:18px!important;height:18px!important;margin:0!important;accent-color:var(--evd-acc)}.evd-box .evd-sw span{flex:1;text-align:left}' +
     '.evd-toast{position:fixed;right:18px;bottom:18px;z-index:2147483001;max-width:min(420px,calc(100vw - 36px));display:flex;gap:10px;align-items:center;padding:11px 14px;border-radius:12px;background:var(--evd-bg);color:var(--evd-fg);border:1px solid var(--evd-line);box-shadow:0 10px 30px rgba(0,0,0,.25);font:14px "Segoe UI",system-ui,sans-serif}' +
     '.evd-toast span{flex:1;min-width:0}.evd-off{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483001;padding:7px 14px;border-radius:99px;background:#8a5a12;color:#fff;font:13px "Segoe UI",system-ui,sans-serif}' +
+    '.evd-upd{position:fixed;right:18px;bottom:18px;z-index:2147483002;width:min(380px,calc(100vw - 36px));padding:14px 16px;border-radius:14px;background:var(--evd-bg);color:var(--evd-fg);border:1px solid var(--evd-line);box-shadow:0 14px 40px rgba(0,0,0,.28);font:14px "Segoe UI",system-ui,sans-serif;display:grid;gap:8px}' +
+    '.evd-upd .t{display:flex;align-items:center;gap:8px}.evd-upd .t b{flex:1}.evd-upd small{color:var(--evd-mute);line-height:1.4}.evd-upd .n{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:12.5px;color:var(--evd-mute);background:var(--evd-soft);border-radius:8px;padding:8px 10px}' +
+    '.evd-bar{height:8px;border-radius:99px;background:var(--evd-soft);overflow:hidden}.evd-bar i{display:block;height:100%;width:0;background:var(--evd-acc);transition:width .4s ease}.evd-bar.ind i{width:35%;animation:evdind 1.3s ease-in-out infinite}@keyframes evdind{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}' +
+    '.evd-dot{width:8px;height:8px;border-radius:50%;background:var(--evd-acc);flex:none}' +
     ':root{--evd-bg:#fff;--evd-fg:#1d2020;--evd-mute:#5f6763;--evd-line:#dfe3dc;--evd-soft:#f3f5f1;--evd-acc:#66753A}' +
     '@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--evd-bg:#1f2322;--evd-fg:#eceeeb;--evd-mute:#a7aea9;--evd-line:#353b39;--evd-soft:#2a2f2d;--evd-acc:#8FA35A}}' +
     ':root[data-theme="dark"]{--evd-bg:#1f2322;--evd-fg:#eceeeb;--evd-mute:#a7aea9;--evd-line:#353b39;--evd-soft:#2a2f2d;--evd-acc:#8FA35A}';
@@ -288,33 +292,105 @@
       /* updates */
       var s3 = el('div', 'evd-s'); s3.appendChild(el('h4', '', 'Updates'));
       s3.appendChild(el('p', '', 'The workspace itself always updates automatically. A new desktop installer is only needed when the app’s own features change.'));
-      var r3 = el('div', 'evd-row'); var st = el('span', '', ''); r3.appendChild(st);
-      if (latest && latest.newer) r3.appendChild(button('Download version ' + latest.tag, function () { openOutside(RELEASES); }, true)); else st.textContent = latest ? 'You have the latest version.' : '';
-      s3.appendChild(r3); box.appendChild(s3);
+      var st = el('p', '', ''); s3.appendChild(st); var r3 = el('div', 'evd-row'); s3.appendChild(r3); box.appendChild(s3);
+      function upRow() {
+        r3.innerHTML = '';
+        if (UP.busy) { st.textContent = 'Updating to version ' + latest.tag + ' – see the card at the bottom right.'; return; }
+        if (latest && latest.newer) {
+          st.textContent = 'Version ' + latest.tag + ' is ready (you have ' + latest.mine + ').';
+          r3.appendChild(button('Update now', function () { ov.remove(); startUpdate(); }, true));
+          r3.appendChild(button('What’s new', function () { ov.remove(); showUpdate(true); }));
+        } else st.textContent = latest ? 'You have the latest version (' + latest.mine + '). Checked ' + new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '.' : 'Not checked yet.';
+        r3.appendChild(button('Check for updates', function () { st.textContent = 'Checking…'; r3.innerHTML = ''; checkUpdate(true).then(upRow); }));
+      }
+      upRow();
 
       document.body.appendChild(ov); x.focus();
     });
   }
 
-  /* ---------- new desktop version available? (checked once a day) ---------- */
+  /* ---------- updates: checked when the app starts and every 6 hours ----------
+     Windows: "Update now" downloads the new installer inside the app (progress bar and time left), then opens it;
+     Eight Voids closes while it installs. Mac: the new .dmg downloads in the browser. Nothing installs without your click. */
+  var UP = { busy: false };
   function newer(a, b) { a = String(a).replace(/^v/, '').split('.').map(Number); b = String(b).replace(/^v/, '').split('.').map(Number); for (var i = 0; i < 3; i++) { if ((a[i] || 0) > (b[i] || 0)) return true; if ((a[i] || 0) < (b[i] || 0)) return false; } return false; }
-  function checkUpdate() {
-    var t = T(); if (!t || !t.app) return;
-    Promise.all([t.app.getVersion(), fetch('https://api.github.com/repos/Eightvoids/desktop/releases/latest', { headers: { Accept: 'application/vnd.github+json' } }).then(function (r) { return r.ok ? r.json() : null; })])
+  function isWin() { return /Windows/i.test(navigator.userAgent); }
+  function mb(n) { return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB'; }
+  function dur(ms) { if (!(ms > 0) || !isFinite(ms)) return ''; var s = Math.round(ms / 1000); if (s < 45) return 'less than a minute'; var m = Math.round(s / 60); if (m < 60) return 'about ' + m + ' min'; return 'about ' + Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
+  function checkUpdate(manual) {
+    var t = T(); if (!t || !t.app) return Promise.resolve(null);
+    return Promise.all([t.app.getVersion(), fetch('https://api.github.com/repos/Eightvoids/desktop/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })])
       .then(function (r) {
-        var mine = r[0], rel = r[1]; if (!rel || !rel.tag_name) return;
-        latest = { tag: rel.tag_name.replace(/^v/, ''), newer: newer(rel.tag_name, mine) };
-        if (latest.newer && S.seenVersion !== latest.tag) {
-          S.seenVersion = latest.tag; save();
-          notify('Eight Voids update', 'Version ' + latest.tag + ' of the desktop app is ready. Open Desktop settings to download it.');
-          toast('A new version of the Eight Voids desktop app is ready.', 'Download', function () { openOutside(RELEASES); });
+        var mine = r[0], rel = r[1]; if (!rel || !rel.tag_name) return null;
+        function asset(n) { var a = (rel.assets || []).filter(function (x) { return x.name === n; })[0]; return a ? { url: a.browser_download_url, size: a.size } : null; }
+        latest = { tag: rel.tag_name.replace(/^v/, ''), mine: mine, newer: newer(rel.tag_name, mine), notes: String(rel.body || '').trim(), exe: asset('EightVoids-Windows-Setup.exe'), dmg: asset('EightVoids-macOS.dmg'), at: Date.now() };
+        if (latest.newer) {
+          return ready.then(function () {
+            var later = S.updLater && S.updLater.tag === latest.tag && S.updLater.until > Date.now();
+            if (manual || !later) showUpdate(false);
+            if (S.seenVersion !== latest.tag) { S.seenVersion = latest.tag; save(); notify('Eight Voids update', 'Version ' + latest.tag + ' of the desktop app is ready. Click Update now in the app.'); }
+            return latest;
+          });
         }
+        if (manual) toast('You have the latest version (' + mine + ').');
+        return latest;
+      }).catch(function () { if (manual) toast('Updates could not be checked – are you online?'); return null; });
+  }
+  function card() {
+    var d = document.getElementById('evd-upd');
+    if (!d && document.body) { d = el('div', 'evd-upd'); d.id = 'evd-upd'; d.setAttribute('role', 'status'); document.body.appendChild(d); }
+    return d;
+  }
+  function showUpdate(open) {
+    if (!latest || UP.busy) return; var d = card(); if (!d) return; d.innerHTML = '';
+    var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Update ready – Eight Voids ' + latest.tag));
+    var x = el('button', 'evd-x', '×'); x.setAttribute('aria-label', 'Close'); x.onclick = later; tt.appendChild(x); d.appendChild(tt);
+    var size = isWin() ? latest.exe : latest.dmg;
+    d.appendChild(el('small', '', 'You have version ' + latest.mine + '.' + (size ? ' Download ' + mb(size.size) + '.' : '') + (isWin() ? ' Eight Voids closes while it installs and you can open it again straight after.' : '')));
+    var nb = null;
+    if (latest.notes) { nb = el('div', 'n', latest.notes.slice(0, 1200)); nb.hidden = !open; d.appendChild(nb); }
+    var r = el('div', 'evd-row');
+    r.appendChild(button('Update now', startUpdate, true));
+    if (nb) r.appendChild(button('What’s new', function () { nb.hidden = !nb.hidden; }));
+    r.appendChild(button('Later', later));
+    d.appendChild(r);
+    function later() { S.updLater = { tag: latest.tag, until: Date.now() + 20 * 3600 * 1000 }; save(); d.remove(); }
+  }
+  function startUpdate() {
+    var t = T(); if (!latest) return;
+    if (!isWin() || !latest.exe || !t.core || !t.core.invoke) { openOutside((isWin() ? latest.exe : latest.dmg || {}).url || RELEASES); var c0 = document.getElementById('evd-upd'); if (c0) c0.remove(); toast('The new version is downloading in your browser – open it when it finishes.'); return; }
+    if (UP.busy) return; UP.busy = true;
+    var d = card(); d.innerHTML = '';
+    var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Updating to Eight Voids ' + latest.tag)); d.appendChild(tt);
+    var bar = el('div', 'evd-bar'); var bi = el('i'); bar.appendChild(bi); d.appendChild(bar);
+    var info = el('small', '', 'Starting the download…'); d.appendChild(info);
+    var v = latest.tag.replace(/[^0-9.]/g, ''), total = latest.exe.size || 0, t0 = Date.now(), part = null, timer = null;
+    t.path.appCacheDir().then(function (dir) { return t.path.join(dir, 'EightVoids-Update-' + v + '.exe.part'); }).then(function (p) { part = p; });
+    timer = setInterval(function () {
+      if (!part) return;
+      t.fs.stat(part).then(function (st) {
+        var n = +st.size || 0, el2 = Date.now() - t0, pc = total ? Math.min(99, Math.floor(n / total * 100)) : 0;
+        bi.style.width = pc + '%';
+        var left = n > 0 && total && el2 > 3000 ? dur((total - n) / (n / el2)) : '';
+        info.textContent = pc + '% · ' + mb(n) + (total ? ' of ' + mb(total) : '') + (left ? ' · ' + left + ' left' : ' · working out the time left…');
       }).catch(function () {});
+    }, 700);
+    t.core.invoke('update_download', { url: latest.exe.url, version: v }).then(function () {
+      clearInterval(timer); bi.style.width = '100%';
+      info.textContent = 'Downloaded. Opening the installer – Eight Voids closes now. If Windows asks, click More info › Run anyway.';
+      return new Promise(function (r) { setTimeout(r, 2500); }).then(function () { return t.core.invoke('update_install', { version: v }); });
+    }).catch(function (e) {
+      clearInterval(timer); UP.busy = false; d.innerHTML = '';
+      var t2 = el('div', 't'); t2.appendChild(el('b', '', 'The update did not finish')); var x2 = el('button', 'evd-x', '×'); x2.onclick = function () { d.remove(); }; t2.appendChild(x2); d.appendChild(t2);
+      d.appendChild(el('small', '', String((e && e.message) || e || 'The download stopped.').slice(0, 200)));
+      var r2 = el('div', 'evd-row'); r2.appendChild(button('Try again', startUpdate, true)); r2.appendChild(button('Download in browser', function () { openOutside(latest.exe.url); d.remove(); })); d.appendChild(r2);
+    });
   }
 
   /* ---------- what the workspace and the tray menu can use ---------- */
   window.evDesktop = {
     isDesktop: true,
+    checkUpdate: function () { return checkUpdate(true); },
     notify: notify,
     settings: openSettings,
     saveFile: saveBlob,
@@ -327,7 +403,7 @@
   }
   window.addEventListener('load', function () {
     onTray();
-    if (/^app\./i.test(H)) setTimeout(checkUpdate, 8000);
+    if (/^app\./i.test(H)) { setTimeout(function () { checkUpdate(false); }, 8000); setInterval(function () { checkUpdate(false); }, 6 * 3600 * 1000); }
     if (!navigator.onLine) offline(true);
   });
 })();
