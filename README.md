@@ -24,6 +24,11 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.8 – updates without any installer window, drawing titles
+- Restart now (or quitting the app with an update waiting) installs the new version completely in the background: `update_apply.ps1` runs the installer with `/S /UPDATE` (silent, update mode – no window, no questions), then reopens Eight Voids. Inside the app a full-window "Updating Eight Voids to x.y.z" screen shows until it closes.
+- 1.3.7 itself still showed the small installer progress window once; from 1.3.8 on, updates are fully inside the app.
+- **Drawing titles**: new command `rename_in_folder` (permission `allow-rename-in-folder`) gives a drawing file its title – it renames ONE file inside its own folder to "number - title". It refuses when the new name does not start with the file's number, changes the file type, the file is outside the person's own folders, or a file with the new name is already there. Nothing is moved, replaced or deleted. The workspace uses it for the rename plan (titles read from each drawing's title block) in Connections › This computer › Drawing titles – only when you click Rename.
+
 ## Version 1.3.7 – updates like Autodesk, pictures inside emails
 - **Updates (Windows)**: a new version downloads quietly in the background. Then a card says "Eight Voids x.y.z is ready" with **Restart now** (Eight Voids closes, the installer runs with a small progress window in update mode – `/P /UPDATE`, no questions – and Eight Voids opens again by itself) or **Later** (it installs by itself when you quit the app). New command `update_pending`; `update_install` takes `silent`; fixed script `src-tauri/ps/update_apply.ps1` (waits for the app to close, installs, reopens). Versions before 1.3.7 still update once with the normal installer.
 - **Pictures inside emails**: outlook_read and outlook_save_atts also take the pictures placed inside the email text (hidden attachments, png / jpg / gif / bmp / webp / heic, 15 KB or more – small logos and icons are left out), marked `inl: 1`.

@@ -1,6 +1,6 @@
 {
   "identifier": "eightvoids",
-  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, and downloading and opening a new Eight Voids installer when you click Update now.",
+  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, giving a drawing file its title (rename inside its own folder only), and downloading and opening a new Eight Voids installer when you click Update now.",
   "windows": [
     "main"
   ],
@@ -78,6 +78,7 @@
     "allow-outlook-test",
     "allow-update-download",
     "allow-update-install",
-    "allow-update-pending"
+    "allow-update-pending",
+    "allow-rename-in-folder"
   ]
 }

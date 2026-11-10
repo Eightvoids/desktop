@@ -74,6 +74,7 @@
     '.evd-toast span{flex:1;min-width:0}.evd-off{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483001;padding:7px 14px;border-radius:99px;background:#8a5a12;color:#fff;font:13px "Segoe UI",system-ui,sans-serif}' +
     '.evd-upd{position:fixed;right:18px;bottom:18px;z-index:2147483002;width:min(380px,calc(100vw - 36px));padding:14px 16px;border-radius:14px;background:var(--evd-bg);color:var(--evd-fg);border:1px solid var(--evd-line);box-shadow:0 14px 40px rgba(0,0,0,.28);font:14px "Segoe UI",system-ui,sans-serif;display:grid;gap:8px}' +
     '.evd-upd .t{display:flex;align-items:center;gap:8px}.evd-upd .t b{flex:1}.evd-upd small{color:var(--evd-mute);line-height:1.4}.evd-upd .n{max-height:120px;overflow:auto;white-space:pre-wrap;font-size:12.5px;color:var(--evd-mute);background:var(--evd-soft);border-radius:8px;padding:8px 10px}' +
+    '.evd-upov{position:fixed;inset:0;z-index:2147483003;display:grid;place-items:center;background:color-mix(in srgb,var(--evd-bg) 92%,transparent);backdrop-filter:blur(6px);font:14px "Segoe UI",system-ui,sans-serif;color:var(--evd-fg)}.evd-upov>div{display:grid;justify-items:center;gap:10px;text-align:center;max-width:360px;padding:20px}.evd-upov small{color:var(--evd-mute);line-height:1.45}.evd-spin{width:34px;height:34px;border-radius:50%;border:3px solid var(--evd-soft);border-top-color:var(--evd-acc);animation:evdspin 1s linear infinite}@keyframes evdspin{to{transform:rotate(360deg)}}' +
     '.evd-bar{height:8px;border-radius:99px;background:var(--evd-soft);overflow:hidden}.evd-bar i{display:block;height:100%;width:0;background:var(--evd-acc);transition:width .4s ease}.evd-bar.ind i{width:35%;animation:evdind 1.3s ease-in-out infinite}@keyframes evdind{0%{transform:translateX(-100%)}100%{transform:translateX(290%)}}' +
     '.evd-dot{width:8px;height:8px;border-radius:50%;background:var(--evd-acc);flex:none}' +
     ':root{--evd-bg:#fff;--evd-fg:#1d2020;--evd-mute:#5f6763;--evd-line:#dfe3dc;--evd-soft:#f3f5f1;--evd-acc:#66753A}' +
@@ -363,7 +364,7 @@
     if (!latest || UP.busy) return; var d = card(); if (!d) return; d.innerHTML = '';
     var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Eight Voids ' + latest.tag + ' is ready'));
     var x = el('button', 'evd-x', '×'); x.setAttribute('aria-label', 'Close'); x.onclick = later; tt.appendChild(x); d.appendChild(tt);
-    d.appendChild(el('small', '', 'Downloaded in the background. Restart to finish – it takes about a minute, then Eight Voids opens again. Your sign-in, settings and work stay.'));
+    d.appendChild(el('small', '', 'Downloaded in the background. Restart to finish – it installs quietly (no installer window) and Eight Voids opens again in about a minute. Your sign-in, settings and work stay.'));
     var nb = null;
     if (latest.notes) { nb = el('div', 'n', latest.notes.slice(0, 1200)); nb.hidden = true; d.appendChild(nb); }
     var r = el('div', 'evd-row');
@@ -379,7 +380,9 @@
   function restartNow() {
     var t = T(); if (UP.busy) return; UP.busy = true; var d = card(); d.innerHTML = '';
     var tt = el('div', 't'); tt.appendChild(el('span', 'evd-dot')); tt.appendChild(el('b', '', 'Installing Eight Voids ' + latest.tag + '…')); d.appendChild(tt);
-    d.appendChild(el('small', '', 'Eight Voids closes now, installs the update with a small progress window and opens again by itself.'));
+    d.appendChild(el('small', '', 'Eight Voids closes for a moment, installs the update quietly and opens again by itself.'));
+    /* the whole window shows the update, so nothing else pops up */
+    var ov = el('div', 'evd-upov'); ov.innerHTML = '<div><div class="evd-spin"></div><b>Updating Eight Voids to ' + latest.tag + '</b><small>Eight Voids closes for a moment and opens again by itself – about a minute. Nothing to click.</small></div>'; document.body.appendChild(ov);
     setTimeout(function () {
       t.core.invoke('update_install', { version: vOf(), silent: true }).catch(function (e) {
         UP.busy = false; d.innerHTML = ''; var t2 = el('div', 't'); t2.appendChild(el('b', '', 'The update did not start')); d.appendChild(t2);

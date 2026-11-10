@@ -171,6 +171,47 @@ fn update_apply(app: &AppHandle, version: &str, relaunch: bool) -> Result<(), St
     ])
 }
 
+/// Gives a drawing file its title: renames ONE file inside its own folder (never moves, replaces or deletes).
+/// Only allowed when the new name starts with the file's current number, keeps the same file type,
+/// the file is in the person's own folders and no file with the new name is there yet.
+#[cfg(desktop)]
+#[tauri::command]
+fn rename_in_folder(path: String, new_name: String) -> Result<String, String> {
+    use std::path::PathBuf;
+    let n = new_name.trim().to_string();
+    if n.is_empty() || n.chars().count() > 200 || n.ends_with('.') || n.ends_with(' ')
+        || n.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c)) || n.contains("..")
+    {
+        return Err("The new name is not allowed.".into());
+    }
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() || !p.is_file() {
+        return Err("The file is not there (it may have been renamed or moved already).".into());
+    }
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).ok_or("No home folder.")?;
+    let cp = p.canonicalize().map_err(|e| e.to_string())?;
+    let ch = home.canonicalize().map_err(|e| e.to_string())?;
+    if !cp.starts_with(&ch) {
+        return Err("Only files in your own folders can be renamed.".into());
+    }
+    let old = p.file_name().and_then(|x| x.to_str()).ok_or("No file name.")?.to_string();
+    let ext = |s: &str| s.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+    if ext(&old) != ext(&n) {
+        return Err("The file type must stay the same.".into());
+    }
+    let num: String = old.trim_start_matches(|c: char| c == '\u{200c}' || c == '\u{200b}' || c == '\u{feff}')
+        .split(|c: char| c == ' ' || c == '_' || c == '(' || c == '.').next().unwrap_or("").to_string();
+    if num.len() < 6 || !n.to_lowercase().starts_with(&num.to_lowercase()) {
+        return Err("The new name must start with the file's number.".into());
+    }
+    let to = p.parent().ok_or("No folder.")?.join(&n);
+    if to.exists() {
+        return Err("A file with the new name is already in the folder.".into());
+    }
+    std::fs::rename(&p, &to).map_err(|e| format!("Could not rename (is the file open in another program?): {}", e))?;
+    Ok(to.to_string_lossy().to_string())
+}
+
 /// Remembers (or forgets) an update to install when Eight Voids is quit.
 #[cfg(desktop)]
 #[tauri::command]
@@ -388,7 +429,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.
