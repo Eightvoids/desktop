@@ -75,6 +75,7 @@
     "allow-outlook-folders",
     "allow-outlook-read",
     "allow-outlook-save-atts",
+    "allow-outlook-test",
     "allow-update-download",
     "allow-update-install"
   ]

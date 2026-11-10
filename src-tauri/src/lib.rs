@@ -37,6 +37,7 @@ mod outlook {
     pub const FOLDERS: &str = include_str!("../ps/outlook_folders.ps1");
     pub const READ: &str = include_str!("../ps/outlook_read.ps1");
     pub const SAVE: &str = include_str!("../ps/outlook_save_atts.ps1");
+    pub const TEST: &str = include_str!("../ps/outlook_test.ps1");
 
     #[allow(dead_code)]
     fn b64(data: &[u8]) -> String {
@@ -168,6 +169,16 @@ async fn outlook_read(since: String, folders: Vec<String>, max: u32) -> Result<S
     .map_err(|e| e.to_string())?
 }
 
+/// Self-test of the Outlook bridge (read only): what it sees in the first ticked folders and the Inbox.
+#[cfg(desktop)]
+#[tauri::command]
+async fn outlook_test(since: String, folders: Vec<String>) -> Result<String, String> {
+    let f = serde_json::to_string(&folders).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || outlook::run(outlook::TEST, vec![("EV_SINCE", since), ("EV_FOLDERS", f)]))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Saves one email's attachments into the app's own cache folder so the page can upload them; they are removed an hour later.
 #[cfg(desktop)]
 #[tauri::command]
@@ -290,7 +301,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, update_download, update_install]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.

@@ -24,6 +24,10 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.3 – Outlook bridge reads newest emails first
+- The bridge read no emails on some computers: it now walks each folder newest-first with GetFirst / GetNext (which follow the sort) and stops after 25 older emails in a row.
+- New read-only self-test `outlook_test` (script `src-tauri/ps/outlook_test.ps1`), used by the Test button in the workspace (Connections › This computer): item counts, newest dates and emails since the start date for the Inbox and the first ticked folders, plus the Windows language and calendar.
+
 ## Version 1.3.2 – Updates inside the app
 - **Desktop (Windows)**: the app checks for a new version when it starts and every 6 hours. An "Update ready" card shows the new version and what's new. **Update now** downloads the installer inside the app with a progress bar and the time left (`update_download`, fixed script `src-tauri/ps/update_download.ps1`, only from this repository's Releases page), then opens it (`update_install`); Eight Voids closes while it installs. **Later** hides the card for 20 hours. Desktop settings › Updates has **Check for updates**.
 - **Mac**: the same card; Update now downloads the new .dmg in the browser.

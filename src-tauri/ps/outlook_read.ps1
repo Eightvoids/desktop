@@ -10,11 +10,22 @@ function Collect($f) {
   $rel = EvRel $f
   $items = $f.Items
   $items.Sort('[ReceivedTime]', $true)
-  foreach ($it in $items) {
-    try { $rt = [datetime]$it.ReceivedTime } catch { continue }
-    if ($rt -lt $since) { break }
-    try { if ($it.Class -ne 43) { continue } } catch { continue }
-    [void]$cand.Add([pscustomobject]@{ t = $rt; it = $it; fo = $rel })
+  # GetFirst / GetNext follow the sort (newest first). A few older items in a row end the folder.
+  $old = 0
+  $it = $items.GetFirst()
+  while ($null -ne $it) {
+    $rt = $null
+    try { $rt = [datetime]$it.ReceivedTime } catch { }
+    if ($null -ne $rt) {
+      if ($rt -lt $since) { $old++; if ($old -ge 25) { break } }
+      else {
+        $old = 0
+        $ok = $false
+        try { $ok = ($it.Class -eq 43) } catch { }
+        if ($ok) { [void]$cand.Add([pscustomobject]@{ t = $rt; it = $it; fo = $rel }) }
+      }
+    }
+    $it = $items.GetNext()
   }
 }
 function Walk($f, $d) {
