@@ -1,6 +1,7 @@
 # Eight Voids – Outlook bridge self-test (READ ONLY). Shows what the bridge sees; changes nothing.
 $since = [datetime]::Parse($env:EV_SINCE, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime()
-$want = @(ConvertFrom-Json $env:EV_FOLDERS)
+# one folder per line (Windows PowerShell 5.1 reads a JSON list as a single item)
+$want = @(([string]$env:EV_FOLDERS) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $ol = EvOutlook
 $ns = $ol.GetNamespace('MAPI')
 $root = $ns.DefaultStore.GetRootFolder()

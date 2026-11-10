@@ -160,7 +160,7 @@ async fn outlook_folders() -> Result<String, String> {
 #[cfg(desktop)]
 #[tauri::command]
 async fn outlook_read(since: String, folders: Vec<String>, max: u32) -> Result<String, String> {
-    let f = serde_json::to_string(&folders).map_err(|e| e.to_string())?;
+    let f = folders.join("\n");
     let max = max.clamp(1, 1000).to_string();
     tauri::async_runtime::spawn_blocking(move || {
         outlook::run(outlook::READ, vec![("EV_SINCE", since), ("EV_FOLDERS", f), ("EV_MAX", max)])
@@ -173,7 +173,7 @@ async fn outlook_read(since: String, folders: Vec<String>, max: u32) -> Result<S
 #[cfg(desktop)]
 #[tauri::command]
 async fn outlook_test(since: String, folders: Vec<String>) -> Result<String, String> {
-    let f = serde_json::to_string(&folders).map_err(|e| e.to_string())?;
+    let f = folders.join("\n");
     tauri::async_runtime::spawn_blocking(move || outlook::run(outlook::TEST, vec![("EV_SINCE", since), ("EV_FOLDERS", f)]))
         .await
         .map_err(|e| e.to_string())?

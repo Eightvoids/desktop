@@ -24,6 +24,9 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.3.4 – Outlook bridge reads every ticked folder
+- The ticked folders now reach the reader one per line. Before, Windows PowerShell 5.1 read the list as one item, so with two or more folders nothing matched and no emails were read (the Inbox self-test still saw 81 emails).
+
 ## Version 1.3.3 – Outlook bridge reads newest emails first
 - The bridge read no emails on some computers: it now walks each folder newest-first with GetFirst / GetNext (which follow the sort) and stops after 25 older emails in a row.
 - New read-only self-test `outlook_test` (script `src-tauri/ps/outlook_test.ps1`), used by the Test button in the workspace (Connections › This computer): item counts, newest dates and emails since the start date for the Inbox and the first ticked folders, plus the Windows language and calendar.

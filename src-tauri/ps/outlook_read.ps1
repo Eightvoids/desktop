@@ -2,7 +2,8 @@ $ol = EvOutlook
 $ns = $ol.GetNamespace('MAPI')
 $root = $ns.DefaultStore.GetRootFolder()
 $since = [datetime]::Parse($env:EV_SINCE, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToLocalTime()
-$want = @(ConvertFrom-Json $env:EV_FOLDERS)
+# one folder per line (Windows PowerShell 5.1 reads a JSON list as a single item)
+$want = @(([string]$env:EV_FOLDERS) -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $max = [int]$env:EV_MAX
 # Dates are compared as dates (not as text), so this works with any Windows language or calendar.
 $cand = New-Object System.Collections.ArrayList
