@@ -447,9 +447,12 @@ pub fn run() {
     let builder = tauri::Builder::default();
 
     // Desktop: opening the app a second time just brings the open window to the front.
+    // Clicking a desktop notification starts Eight Voids again: the open window comes to the front
+    // and the page opens the notifications list.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         show_main(app);
+        let _ = app.emit("ev-activate", ());
     }));
 
     let builder = builder

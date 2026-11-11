@@ -157,13 +157,19 @@
   }
 
   /* ---------- desktop notifications ---------- */
+  /* clicking a notification brings the window to the front (single instance) and opens the notifications list */
+  var LASTN = 0;
+  function openBell() { if (document.getElementById('evn-p')) return; var b = document.querySelector('button[aria-label="Notifications"]'); if (b) b.click(); }
+  function onActivate() { if (Date.now() - LASTN < 30 * 60 * 1000) setTimeout(openBell, 400); }
+  try { var T0 = window.__TAURI__; if (T0 && T0.event) { T0.event.listen('ev-activate', onActivate).catch(function () {}); } } catch (e) {}
+  window.addEventListener('focus', function () { if (Date.now() - LASTN < 15000) setTimeout(openBell, 300); });
   function notify(title, body) {
     var t = T(); if (!t || !t.notification) return Promise.resolve(false);
     return ready.then(function () {
       if (S.notify === false) return false;
       var n = t.notification;
       return n.isPermissionGranted().then(function (ok) { return ok ? true : n.requestPermission().then(function (p) { return p === 'granted'; }); })
-        .then(function (ok) { if (ok) n.sendNotification({ title: String(title || 'Eight Voids'), body: String(body || '') }); return ok; });
+        .then(function (ok) { if (ok) { LASTN = Date.now(); n.sendNotification({ title: String(title || 'Eight Voids'), body: String(body || '') }); } return ok; });
     }).catch(function () { return false; });
   }
 
