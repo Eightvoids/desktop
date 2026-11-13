@@ -24,6 +24,12 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.4.1 – security hardening
+- Pages may only come from eightvoids.com, www.eightvoids.com and app.eightvoids.com (before: any *.eightvoids.com address).
+- Folder access (copying the project folder, saving files) still covers your own folders, but never: start-up folders and PowerShell profiles (a file there would run at sign-in), Windows credential stores, browser profiles (saved passwords), GitHub Desktop, Claude, Store apps, and key folders such as .ssh, .aws, .azure, .kube, .docker, .gnupg, .git-credentials, .npmrc.
+- "Open" / "Show in Explorer" never starts a program or script (.exe, .bat, .cmd, .ps1, .vbs, .js, .msi, .lnk, .reg, … are refused) and never opens anything inside AppData.
+- Nothing else changes for you; the app updates itself as usual.
+
 ## Version 1.3.9 – Restart now really installs the update
 - 1.3.7 / 1.3.8: Restart now closed and reopened Eight Voids without installing (the update helper started by the app did not run the installer). Now the installer is started straight from Eight Voids, the way Tauri's own updater does it (`/S /UPDATE /R` – silent, update mode, reopen). It closes Eight Voids by itself, installs, and opens it again; a small watcher (`update_apply.ps1`) reopens Eight Voids if needed and writes `EightVoids-Update.log` next to the download.
 - After every Restart now the app checks, once it is open again, that the new version is really installed. If not, a card says so with **Install with the installer** (the normal installer – the way that always works) and **Try again**. If Eight Voids does not close within 40 seconds, the same card shows.

@@ -1,6 +1,6 @@
 {
   "identifier": "eightvoids",
-  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, giving a drawing file its title (rename inside its own folder only), and downloading and opening a new Eight Voids installer when you click Update now.",
+  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, giving a drawing file its title (rename inside its own folder only), and downloading and opening a new Eight Voids installer when you click Update now. 1.4.1: no access to start-up folders, shell profiles or other programs' saved passwords and keys; programs and scripts are never started from a page.",
   "windows": [
     "main"
   ],
@@ -8,7 +8,8 @@
   "remote": {
     "urls": [
       "https://eightvoids.com/*",
-      "https://*.eightvoids.com/*"
+      "https://www.eightvoids.com/*",
+      "https://app.eightvoids.com/*"
     ]
   },
   "permissions": [
@@ -25,6 +26,89 @@
         },
         {
           "path": "$HOME/**"
+        }
+      ],
+      "deny": [
+        {
+          "path": "$HOME/**/*.exe"
+        },
+        {
+          "path": "$HOME/**/*.EXE"
+        },
+        {
+          "path": "$HOME/**/*.bat"
+        },
+        {
+          "path": "$HOME/**/*.cmd"
+        },
+        {
+          "path": "$HOME/**/*.com"
+        },
+        {
+          "path": "$HOME/**/*.ps1"
+        },
+        {
+          "path": "$HOME/**/*.psm1"
+        },
+        {
+          "path": "$HOME/**/*.vbs"
+        },
+        {
+          "path": "$HOME/**/*.vbe"
+        },
+        {
+          "path": "$HOME/**/*.js"
+        },
+        {
+          "path": "$HOME/**/*.jse"
+        },
+        {
+          "path": "$HOME/**/*.wsf"
+        },
+        {
+          "path": "$HOME/**/*.wsh"
+        },
+        {
+          "path": "$HOME/**/*.msi"
+        },
+        {
+          "path": "$HOME/**/*.msp"
+        },
+        {
+          "path": "$HOME/**/*.scr"
+        },
+        {
+          "path": "$HOME/**/*.hta"
+        },
+        {
+          "path": "$HOME/**/*.lnk"
+        },
+        {
+          "path": "$HOME/**/*.url"
+        },
+        {
+          "path": "$HOME/**/*.reg"
+        },
+        {
+          "path": "$HOME/**/*.cpl"
+        },
+        {
+          "path": "$HOME/**/*.jar"
+        },
+        {
+          "path": "$HOME/**/*.application"
+        },
+        {
+          "path": "$HOME/**/*.appref-ms"
+        },
+        {
+          "path": "$HOME/**/*.dll"
+        },
+        {
+          "path": "$HOME/**/*.sys"
+        },
+        {
+          "path": "$HOME/AppData/**"
         }
       ]
     },
@@ -69,6 +153,84 @@
         },
         {
           "path": "$HOME/AppData/Roaming/Microsoft/Credentials/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Microsoft/Windows/Start Menu/**"
+        },
+        {
+          "path": "$HOME/Documents/WindowsPowerShell/**"
+        },
+        {
+          "path": "$HOME/Documents/PowerShell/**"
+        },
+        {
+          "path": "$HOME/OneDrive*/Documents/WindowsPowerShell/**"
+        },
+        {
+          "path": "$HOME/OneDrive*/Documents/PowerShell/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/Microsoft/Credentials/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Microsoft/Protect/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/Microsoft/Vault/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Microsoft/Vault/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/Google/Chrome/User Data/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/Microsoft/Edge/User Data/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Mozilla/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/BraveSoftware/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/GitHub Desktop/**"
+        },
+        {
+          "path": "$HOME/AppData/Roaming/Claude/**"
+        },
+        {
+          "path": "$HOME/AppData/Local/Packages/**"
+        },
+        {
+          "path": "$HOME/.aws/**"
+        },
+        {
+          "path": "$HOME/.azure/**"
+        },
+        {
+          "path": "$HOME/.kube/**"
+        },
+        {
+          "path": "$HOME/.docker/**"
+        },
+        {
+          "path": "$HOME/.gnupg/**"
+        },
+        {
+          "path": "$HOME/.config/gh/**"
+        },
+        {
+          "path": "$HOME/.git-credentials"
+        },
+        {
+          "path": "$HOME/.gitconfig"
+        },
+        {
+          "path": "$HOME/.npmrc"
+        },
+        {
+          "path": "$HOME/.netrc"
         }
       ]
     },
