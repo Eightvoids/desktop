@@ -1,6 +1,10 @@
 # Builds the Eight Voids desktop installers (Windows + macOS) on every push to main
 # and publishes them on this repository's Releases page with fixed download names:
 #   EightVoids-Windows-Setup.exe   ·   EightVoids-macOS.dmg
+# 1.4.2 – signed updates: when the repository variable TAURI_SIGNING_PUBLIC_KEY and the secrets
+# TAURI_SIGNING_PRIVATE_KEY (+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD) are set, the public key is built into the app
+# and the Windows installer gets a signature file (EightVoids-Windows-Setup.exe.sig). The app then installs an
+# update only when its signature matches. The private key never leaves GitHub's secrets.
 name: Build desktop apps
 
 on:
@@ -26,8 +30,23 @@ jobs:
           - platform: macos-15-intel
             args: "--target universal-apple-darwin"
     runs-on: ${{ matrix.platform }}
+    env:
+      EV_UPDATE_PUBKEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the update key
+        shell: bash
+        env:
+          HAS_PRIVATE: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          if [ -n "$EV_UPDATE_PUBKEY" ] && [ "$HAS_PRIVATE" != "true" ]; then
+            echo "::error::The variable TAURI_SIGNING_PUBLIC_KEY is set but the secret TAURI_SIGNING_PRIVATE_KEY is missing. Add the secret (or remove the variable) and run again."
+            exit 1
+          fi
+          if [ -z "$EV_UPDATE_PUBKEY" ]; then
+            echo "::notice::No update key yet - this build installs updates without a signature check (as before)."
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -60,10 +79,17 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           V=$(node -p "require('./src-tauri/tauri.conf.json').version")
           F=$(ls src-tauri/target/release/bundle/nsis/*.exe | head -1)
           cp "$F" EightVoids-Windows-Setup.exe
+          if [ -n "$EV_UPDATE_PUBKEY" ]; then
+            npx tauri signer sign EightVoids-Windows-Setup.exe
+            test -s EightVoids-Windows-Setup.exe.sig
+            gh release upload "v$V" EightVoids-Windows-Setup.exe.sig --clobber
+          fi
           gh release upload "v$V" EightVoids-Windows-Setup.exe --clobber
 
       - name: Add fixed download names (macOS)
