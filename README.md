@@ -24,6 +24,13 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.4.2 – folder access only for linked folders, signed updates
+- Folder access is limited: the app can read and save files only in (1) the SharePoint / OneDrive folders Windows syncs on this computer (taken from Windows' own list), (2) folders you choose in Eight Voids (Choose folder… / Link folder) and (3) the app's own settings and cache folders. The rest of your user folder (Desktop, Downloads, Documents outside OneDrive, AppData, keys) is closed to the pages.
+- Folders you linked before that are outside the synced folders: the first time, a Windows message asks **Keep access** / **Not now** (asked once per start; nothing is opened without your yes).
+- Finding a new project's folder by itself now looks inside the synced SharePoint folders.
+- Renaming a drawing file (its title) works only inside the linked folders.
+- Signed updates: once the update key is set on GitHub (variable `TAURI_SIGNING_PUBLIC_KEY`, secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), every Windows installer gets a signature file (`EightVoids-Windows-Setup.exe.sig`) and the app installs an update only when the signature matches. Without the key the app updates as before. The private key stays in GitHub's secrets only.
+
 ## Version 1.4.1 – security hardening
 - Pages may only come from eightvoids.com, www.eightvoids.com and app.eightvoids.com (before: any *.eightvoids.com address).
 - Folder access (copying the project folder, saving files) still covers your own folders, but never: start-up folders and PowerShell profiles (a file there would run at sign-in), Windows credential stores, browser profiles (saved passwords), GitHub Desktop, Claude, Store apps, and key folders such as .ssh, .aws, .azure, .kube, .docker, .gnupg, .git-credentials, .npmrc.

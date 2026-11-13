@@ -231,15 +231,22 @@
 
   /* ---------- Desktop settings window ---------- */
   var latest = null;
+  /* 1.4.2: the synced SharePoint / OneDrive folders come from Windows' own list (the app opens only those and
+     the folders you choose) */
+  function syncFolders() {
+    var t = T(); if (!t || !t.core || !t.core.invoke) return Promise.resolve([]);
+    return t.core.invoke('sync_folders').then(function (l) { return Array.isArray(l) ? l : []; }).catch(function () { return []; });
+  }
   function oneDrives() {
-    var t = T(); if (!t || !t.path || !t.fs) return Promise.resolve([]);
-    return t.path.homeDir().then(function (home) {
-      return t.fs.readDir(home).then(function (list) {
-        return Promise.all(list.filter(function (e) { return e.isDirectory && /^OneDrive/i.test(e.name); }).map(function (e) {
-          return t.path.join(home, e.name).then(function (p) { return { name: e.name, path: p }; });
-        }));
-      });
-    }).catch(function () { return []; });
+    return syncFolders().then(function (l) { return l.filter(function (o) { return /^OneDrive/i.test(o.name || ''); }); });
+  }
+  /* folders linked before 1.4.2 that are outside the synced folders: Eight Voids asks once (a Windows message)
+     before it opens them again */
+  function keepFolders(paths) {
+    var t = T(); if (!t || !t.core || !t.core.invoke) return Promise.resolve([]);
+    var L = (paths || []).map(String).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+    if (!L.length) return Promise.resolve([]);
+    return t.core.invoke('keep_folders', { paths: L }).catch(function () { return []; });
   }
   function el(tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; }
   function button(txt, fn, primary) { var b = el('button', 'evd-b' + (primary ? ' p' : ''), txt); b.type = 'button'; b.onclick = fn; return b; }
@@ -271,7 +278,7 @@
       s2.appendChild(el('span', 'evd-path', S.folder ? S.folder : 'No folder linked – files go to your Downloads folder.'));
       var r2 = el('div', 'evd-row');
       r2.appendChild(button('Choose folder…', function () {
-        t.dialog.open({ directory: true, multiple: false, title: 'Choose a folder for Eight Voids files' }).then(function (p) {
+        t.dialog.open({ directory: true, recursive: true, multiple: false, title: 'Choose a folder for Eight Voids files' }).then(function (p) {
           if (!p) return; S.folder = String(p); S.folderName = S.folder.split(/[\\/]/).filter(Boolean).pop() || S.folder; save().then(openSettings);
         }).catch(function () { toast('The folder could not be opened.'); });
       }, true));
@@ -362,7 +369,8 @@
     if (UP.dl) { if (UP.dlv === v) return UP.dl; }
     UP.dlv = v;
     UP.dl = t.path.appCacheDir().then(function (dir) { return t.path.join(dir, 'EightVoids-Update-' + v + '.exe'); })
-      .then(function (p) { return t.fs.exists(p).then(function (x) { if (x) return true; return t.core.invoke('update_download', { url: latest.exe.url, version: v }).then(function () { return true; }); }); })
+      /* 1.4.2: the app checks an earlier download itself (and its signature, when the update key is set) */
+      .then(function () { return t.core.invoke('update_download', { url: latest.exe.url, version: v }).then(function () { return true; }); })
       .then(function () { UP.have = v; UP.dl = null; return true; }, function () { UP.dl = null; return false; });
     return UP.dl;
   }
@@ -481,6 +489,8 @@
     settings: openSettings,
     saveFile: saveBlob,
     folder: function () { return ready.then(function () { return S.folder ? { path: S.folder, name: S.folderName } : null; }); },
+    syncFolders: syncFolders,
+    keepFolders: keepFolders,
     openOutside: openOutside
   };
   function onTray() {
@@ -491,5 +501,13 @@
     onTray();
     if (/^app\./i.test(H)) { setTimeout(function () { ready.then(function () { return checkUpdate(false); }).then(afterTry, afterTry); }, 8000); setInterval(function () { checkUpdate(false); }, 6 * 3600 * 1000); }
     if (!navigator.onLine) offline(true);
+    /* 1.4.2: keep the folders linked before (the linked save folder and the project folders the workspace knows) */
+    setTimeout(function () {
+      ready.then(function () {
+        var L = S.folder ? [S.folder] : [];
+        try { if (typeof window.__evDeskPaths === 'function') L = L.concat(window.__evDeskPaths() || []); } catch (e) {}
+        return keepFolders(L);
+      }).then(function (ok) { if (ok && ok.length) { try { window.dispatchEvent(new Event('ev-folders')); } catch (e) {} } });
+    }, 12000);
   });
 })();

@@ -19,6 +19,8 @@ use tauri::{
 };
 #[cfg(desktop)]
 use tauri_plugin_notification::NotificationExt;
+#[cfg(desktop)]
+use tauri_plugin_fs::FsExt;
 
 // Desktop behaviour added to every Eight Voids page shown in the window.
 #[cfg(desktop)]
@@ -168,8 +170,56 @@ fn update_file(app: &AppHandle, version: &str) -> Result<std::path::PathBuf, Str
     Ok(dir.join(format!("EightVoids-Update-{v}.exe")))
 }
 
+/// 1.4.2: the Eight Voids update key (public part only). It is put into the app when GitHub builds it, from the
+/// repository variable TAURI_SIGNING_PUBLIC_KEY. When it is there, an update installs only if its signature
+/// (EightVoids-Windows-Setup.exe.sig, made with the private key kept in GitHub's secrets) matches.
+/// Builds made before the key was added work as before.
+#[cfg(desktop)]
+const UPDATE_PUBKEY: Option<&str> = option_env!("EV_UPDATE_PUBKEY");
+
+#[cfg(desktop)]
+fn update_key() -> Option<&'static str> {
+    UPDATE_PUBKEY.map(|k| k.trim()).filter(|k| !k.is_empty())
+}
+
+/// The signature file kept next to the downloaded installer.
+#[cfg(desktop)]
+fn sig_file(p: &std::path::Path) -> std::path::PathBuf {
+    let mut s = p.as_os_str().to_os_string();
+    s.push(".sig");
+    std::path::PathBuf::from(s)
+}
+
+/// Checks the downloaded installer against its signature (same check as Tauri's own updater).
+#[cfg(desktop)]
+fn update_verify(p: &std::path::Path) -> Result<(), String> {
+    let key = match update_key() {
+        Some(k) => k,
+        None => return Ok(()),
+    };
+    use base64::Engine;
+    const BAD: &str = "This update is not signed by Eight Voids, so it was not installed. Download the new version from the Eight Voids releases page instead.";
+    let dec = |s: &str| -> Result<String, String> {
+        let raw = base64::engine::general_purpose::STANDARD.decode(s.trim()).map_err(|_| BAD.to_string())?;
+        String::from_utf8(raw).map_err(|_| BAD.to_string())
+    };
+    let pk = minisign_verify::PublicKey::decode(&dec(key)?).map_err(|_| "The update key in this app is not valid.".to_string())?;
+    let sig_txt = std::fs::read_to_string(sig_file(p)).map_err(|_| BAD.to_string())?;
+    let sig = minisign_verify::Signature::decode(&dec(sig_txt.as_str())?).map_err(|_| BAD.to_string())?;
+    let data = std::fs::read(p).map_err(|e| e.to_string())?;
+    pk.verify(&data, &sig, true).map_err(|_| BAD.to_string())
+}
+
+/// Removes a download that did not pass the check, so it is downloaded again next time.
+#[cfg(desktop)]
+fn update_discard(p: &std::path::Path) {
+    let _ = std::fs::remove_file(p);
+    let _ = std::fs::remove_file(sig_file(p));
+}
+
 /// Downloads the new installer (only from the Eight Voids GitHub releases). The page shows the progress by
-/// reading the size of the ".part" file while this runs.
+/// reading the size of the ".part" file while this runs. 1.4.2: with the update key, its signature is downloaded
+/// too and checked; a download that does not match is removed.
 #[cfg(desktop)]
 #[tauri::command]
 async fn update_download(app: AppHandle, url: String, version: String) -> Result<String, String> {
@@ -179,10 +229,33 @@ async fn update_download(app: AppHandle, url: String, version: String) -> Result
     }
     let out = update_file(&app, &version)?;
     let outs = out.to_string_lossy().to_string();
+    // already downloaded (and, with the update key, signed): nothing to do
+    if out.is_file() && (update_key().is_none() || update_verify(&out).is_ok()) {
+        return Ok(outs);
+    }
+    update_discard(&out);
     let target = outs.clone();
-    tauri::async_runtime::spawn_blocking(move || outlook::run_plain(UPDATE_DOWNLOAD, vec![("EV_URL", url), ("EV_OUT", target)]))
+    let u = url.clone();
+    tauri::async_runtime::spawn_blocking(move || outlook::run_plain(UPDATE_DOWNLOAD, vec![("EV_URL", u), ("EV_OUT", target)]))
         .await
         .map_err(|e| e.to_string())??;
+    if update_key().is_some() {
+        let sig_url = format!("{url}.sig");
+        let sig_out = sig_file(&out).to_string_lossy().to_string();
+        let r = tauri::async_runtime::spawn_blocking(move || {
+            outlook::run_plain(UPDATE_DOWNLOAD, vec![("EV_URL", sig_url), ("EV_OUT", sig_out), ("EV_MIN", "50".to_string())])
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        let check = match r {
+            Err(_) => Err("The update signature could not be downloaded – try again.".to_string()),
+            Ok(_) => update_verify(&out),
+        };
+        if let Err(e) = check {
+            update_discard(&out);
+            return Err(e);
+        }
+    }
     Ok(outs)
 }
 
@@ -192,6 +265,10 @@ fn update_apply(app: &AppHandle, version: &str, relaunch: bool) -> Result<(), St
     let p = update_file(app, version)?;
     if !p.is_file() {
         return Err("The update has not been downloaded yet.".into());
+    }
+    if let Err(e) = update_verify(&p) {
+        update_discard(&p);
+        return Err(e);
     }
     // 1.3.9: the installer is started straight from Eight Voids (silent update mode). It closes Eight Voids by itself
     // if it is still open, installs, and with /R opens it again. A small watcher reopens Eight Voids if the installer
@@ -211,10 +288,10 @@ fn update_apply(app: &AppHandle, version: &str, relaunch: bool) -> Result<(), St
 
 /// Gives a drawing file its title: renames ONE file inside its own folder (never moves, replaces or deletes).
 /// Only allowed when the new name starts with the file's current number, keeps the same file type,
-/// the file is in the person's own folders and no file with the new name is there yet.
+/// the file is in a folder linked to Eight Voids (1.4.2) and no file with the new name is there yet.
 #[cfg(desktop)]
 #[tauri::command]
-fn rename_in_folder(path: String, new_name: String) -> Result<String, String> {
+fn rename_in_folder(app: AppHandle, path: String, new_name: String) -> Result<String, String> {
     use std::path::PathBuf;
     let n = new_name.trim().to_string();
     if n.is_empty() || n.chars().count() > 200 || n.ends_with('.') || n.ends_with(' ')
@@ -226,11 +303,8 @@ fn rename_in_folder(path: String, new_name: String) -> Result<String, String> {
     if !p.is_absolute() || !p.is_file() {
         return Err("The file is not there (it may have been renamed or moved already).".into());
     }
-    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).ok_or("No home folder.")?;
-    let cp = p.canonicalize().map_err(|e| e.to_string())?;
-    let ch = home.canonicalize().map_err(|e| e.to_string())?;
-    if !cp.starts_with(&ch) {
-        return Err("Only files in your own folders can be renamed.".into());
+    if !app.fs_scope().is_allowed(&p) || in_app_dirs(&app, &p) {
+        return Err("Only files in the folders linked to Eight Voids can be renamed.".into());
     }
     let old = p.file_name().and_then(|x| x.to_str()).ok_or("No file name.")?.to_string();
     let ext = |s: &str| s.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
@@ -255,9 +329,11 @@ fn rename_in_folder(path: String, new_name: String) -> Result<String, String> {
 #[tauri::command]
 fn update_pending(app: AppHandle, version: Option<String>) -> Result<(), String> {
     if let Some(v) = &version {
-        if !update_file(&app, v)?.is_file() {
+        let p = update_file(&app, v)?;
+        if !p.is_file() {
             return Err("The update has not been downloaded yet.".into());
         }
+        update_verify(&p)?;
     }
     *PENDING.lock().map_err(|e| e.to_string())? = version;
     Ok(())
@@ -302,6 +378,10 @@ fn update_install(app: AppHandle, version: String, silent: Option<bool>) -> Resu
     if !p.is_file() {
         return Err("The update has not been downloaded yet.".into());
     }
+    if let Err(e) = update_verify(&p) {
+        update_discard(&p);
+        return Err(e);
+    }
     std::process::Command::new(&p)
         .spawn()
         .map_err(|e| format!("The installer could not start: {e}"))?;
@@ -311,6 +391,193 @@ fn update_install(app: AppHandle, version: String, silent: Option<bool>) -> Resu
         h.exit(0);
     });
     Ok(())
+}
+
+// ---------- 1.4.2: folder access only for linked folders ----------
+// Pages can open only: the SharePoint / OneDrive folders Windows syncs on this computer (Windows' own list),
+// the folders the person chooses in Eight Voids, and the app's own settings and cache folders.
+// Everything else in the user folder (Desktop, Downloads, AppData, keys, other programs) stays closed.
+
+#[cfg(desktop)]
+static FOLDERS_ASKED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(desktop)]
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(std::path::PathBuf::from)
+}
+
+#[cfg(desktop)]
+fn in_app_dirs(app: &AppHandle, p: &std::path::Path) -> bool {
+    let a = app.path().app_cache_dir().ok();
+    let b = app.path().app_config_dir().ok();
+    [a, b].iter().flatten().any(|d| p.starts_with(d))
+}
+
+/// A folder that may be linked: an existing folder, never a whole drive, the user folder itself (or above it),
+/// AppData, or a system folder.
+#[cfg(desktop)]
+fn folder_ok(p: &std::path::Path) -> bool {
+    use std::path::Component;
+    if !p.is_absolute() || !p.is_dir() || p.components().any(|c| matches!(c, Component::ParentDir)) {
+        return false;
+    }
+    if p.components().count() < 3 {
+        return false;
+    }
+    if let Some(h) = home_dir() {
+        if h.starts_with(p) || p.starts_with(h.join("AppData")) || p.starts_with(h.join("Library").join("Keychains")) {
+            return false;
+        }
+    }
+    for k in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "ProgramW6432"] {
+        if let Some(d) = std::env::var_os(k) {
+            if p.starts_with(std::path::PathBuf::from(d)) {
+                return false;
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        for d in ["/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/private", "/var"] {
+            if p.starts_with(d) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// The SharePoint and OneDrive folders this computer syncs (from Windows' own list; on a Mac, ~/Library/CloudStorage).
+#[cfg(desktop)]
+fn sync_roots() -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    let mut v: Vec<PathBuf> = vec![];
+    for k in ["OneDriveCommercial", "OneDrive", "OneDriveConsumer"] {
+        if let Some(p) = std::env::var_os(k) {
+            v.push(PathBuf::from(p));
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        if let Ok(o) = std::process::Command::new("reg.exe")
+            .args(["query", r"HKCU\Software\SyncEngines\Providers\OneDrive", "/s", "/v", "MountPoint"])
+            .creation_flags(0x0800_0000)
+            .output()
+        {
+            for line in String::from_utf8_lossy(&o.stdout).lines() {
+                let t = line.trim();
+                if t.starts_with("MountPoint") {
+                    if let Some(i) = t.find("REG_SZ") {
+                        let m = t[i + 6..].trim();
+                        if !m.is_empty() {
+                            v.push(PathBuf::from(m));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(h) = home_dir() {
+        if let Ok(rd) = std::fs::read_dir(&h) {
+            for e in rd.flatten() {
+                if e.file_name().to_string_lossy().to_lowercase().starts_with("onedrive") {
+                    v.push(e.path());
+                }
+            }
+        }
+        if let Ok(rd) = std::fs::read_dir(h.join("Library").join("CloudStorage")) {
+            for e in rd.flatten() {
+                v.push(e.path());
+            }
+        }
+    }
+    let mut out: Vec<PathBuf> = vec![];
+    for p in v {
+        if folder_ok(&p) && !out.iter().any(|q| p.starts_with(q)) {
+            out.retain(|q| !q.starts_with(&p));
+            out.push(p);
+        }
+    }
+    out
+}
+
+/// At start: the synced SharePoint / OneDrive folders are open to Eight Voids (with everything inside them).
+#[cfg(desktop)]
+fn allow_sync_roots(app: &AppHandle) {
+    let scope = app.fs_scope();
+    for r in sync_roots() {
+        let _ = scope.allow_directory(&r, true);
+    }
+}
+
+/// The synced SharePoint / OneDrive folders (name and path), for the Desktop settings and for finding project folders.
+#[cfg(desktop)]
+#[tauri::command]
+async fn sync_folders() -> Result<Vec<serde_json::Value>, String> {
+    let list = tauri::async_runtime::spawn_blocking(sync_roots).await.map_err(|e| e.to_string())?;
+    Ok(list
+        .into_iter()
+        .map(|p| {
+            let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            serde_json::json!({ "name": name, "path": p.to_string_lossy() })
+        })
+        .collect())
+}
+
+/// Folders linked before 1.4.2 (outside the synced folders): asks the person once, in a Windows message, before
+/// Eight Voids may open them again. Folders already open are skipped, so normally no question is shown.
+#[cfg(desktop)]
+#[tauri::command]
+async fn keep_folders(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
+    use std::path::PathBuf;
+    let scope = app.fs_scope();
+    let mut list: Vec<PathBuf> = vec![];
+    for s in paths.iter().take(30) {
+        let p = PathBuf::from(s.trim());
+        if !folder_ok(&p) || in_app_dirs(&app, &p) {
+            continue;
+        }
+        if scope.is_allowed(&p) && scope.is_allowed(p.join("a").join("b")) {
+            continue;
+        }
+        if !list.iter().any(|q| p.starts_with(q)) {
+            list.retain(|q| !q.starts_with(&p));
+            list.push(p);
+        }
+    }
+    if list.is_empty() {
+        return Ok(vec![]);
+    }
+    if FOLDERS_ASKED.swap(true, Ordering::SeqCst) {
+        return Ok(vec![]);
+    }
+    let names: Vec<String> = list.iter().map(|p| format!("  •  {}", p.display())).collect();
+    let msg = format!(
+        "Eight Voids now opens only the folders linked to it.\n\nKeep access to these folders you linked before?\n\n{}\n\nEight Voids reads them and adds new copies – it never moves or deletes your files.",
+        names.join("\n")
+    );
+    let a = app.clone();
+    let yes = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+        a.dialog()
+            .message(msg)
+            .title("Eight Voids – linked folders")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom("Keep access".to_string(), "Not now".to_string()))
+            .blocking_show()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if !yes {
+        return Ok(vec![]);
+    }
+    let mut done = vec![];
+    for p in &list {
+        let _ = scope.allow_directory(p, true);
+        done.push(p.to_string_lossy().to_string());
+    }
+    Ok(done)
 }
 
 #[cfg(desktop)]
@@ -368,6 +635,9 @@ fn show_main(app: &AppHandle) {
 
 #[cfg(desktop)]
 fn setup_main(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // 1.4.2: open the synced SharePoint / OneDrive folders before the first page loads
+    allow_sync_roots(app.handle());
+
     // The main window: starts on the Eight Voids sign-in screen.
     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Eight Voids")
@@ -460,7 +730,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init());
 
-    // Desktop: remembers the folder the person linked.
+    // Desktop: remembers the folders the person linked (1.4.2: only those, and the synced SharePoint / OneDrive folders, can be opened).
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_persisted_scope::init());
 
@@ -470,7 +740,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder, sync_folders, keep_folders]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.

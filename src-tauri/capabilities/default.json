@@ -1,6 +1,6 @@
 {
   "identifier": "eightvoids",
-  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, giving a drawing file its title (rename inside its own folder only), and downloading and opening a new Eight Voids installer when you click Update now. 1.4.1: no access to start-up folders, shell profiles or other programs' saved passwords and keys; programs and scripts are never started from a page.",
+  "description": "What the Eight Voids pages may use in the desktop app: notifications, choosing folders, copying and saving files in folders the person chose (never replacing or deleting their files), reading files in pieces for large uploads, opening links and folders, the read-only Outlook bridge, giving a drawing file its title (rename inside its own folder only), and downloading and opening a new Eight Voids installer when you click Update now. 1.4.1: no access to start-up folders, shell profiles or other programs' saved passwords and keys; programs and scripts are never started from a page. 1.4.2: files can be read and saved only in the synced SharePoint / OneDrive folders (from Windows' own list), the folders the person chooses, and the app's own settings and cache folders – not the rest of the user folder. Updates install only with a valid Eight Voids signature once the update key is set.",
   "windows": [
     "main"
   ],
@@ -135,12 +135,6 @@
           "path": "$APPCONFIG/**"
         },
         {
-          "path": "$HOME"
-        },
-        {
-          "path": "$HOME/**"
-        },
-        {
           "path": "$APPCACHE"
         },
         {
@@ -241,6 +235,8 @@
     "allow-update-download",
     "allow-update-install",
     "allow-update-pending",
-    "allow-rename-in-folder"
+    "allow-rename-in-folder",
+    "allow-sync-folders",
+    "allow-keep-folders"
   ]
 }

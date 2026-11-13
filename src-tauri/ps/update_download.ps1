@@ -15,7 +15,10 @@ try {
   $buf = New-Object byte[] 1048576
   while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) { $fs.Write($buf, 0, $n); $fs.Flush() }
 } finally { $fs.Close(); $in.Close(); $res.Close() }
-if ((Get-Item -LiteralPath $part).Length -lt 1000000) { throw 'The download was incomplete – try again.' }
+# 1.4.2: the signature file is small (EV_MIN); the installer is at least 1 MB
+$min = 1000000
+if ($env:EV_MIN) { $min = [int64]$env:EV_MIN }
+if ((Get-Item -LiteralPath $part).Length -lt $min) { throw 'The download was incomplete – try again.' }
 if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force }
 Move-Item -LiteralPath $part -Destination $out
 'ok'
