@@ -24,6 +24,10 @@ The workspace itself (app.eightvoids.com) updates on its own – a new app is on
 
 No project data is stored in this repository.
 
+## Version 1.4.3 – email attachments with the same name
+- Two attachments with the same file name in one email (often image001.png in signatures and forwarded chains) were saved over each other, so one upload stopped with "the file in storage is … bytes, expected …". Now each is kept (image001 (2).png …) and uploads normally.
+- First version that checks the update signature on every laptop that has 1.4.2 or later.
+
 ## Version 1.4.2 – folder access only for linked folders, signed updates
 - Folder access is limited: the app can read and save files only in (1) the SharePoint / OneDrive folders Windows syncs on this computer (taken from Windows' own list), (2) folders you choose in Eight Voids (Choose folder… / Link folder) and (3) the app's own settings and cache folders. The rest of your user folder (Desktop, Downloads, Documents outside OneDrive, AppData, keys) is closed to the pages.
 - Folders you linked before that are outside the synced folders: the first time, a Windows message asks **Keep access** / **Not now** (asked once per start; nothing is opened without your yes).

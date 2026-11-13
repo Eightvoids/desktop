@@ -1,6 +1,6 @@
 [package]
 name = "eightvoids"
-version = "1.4.2"
+version = "1.4.3"
 description = "Eight Voids app (desktop and mobile)"
 authors = ["Eight Voids"]
 edition = "2021"

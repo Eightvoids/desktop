@@ -8,6 +8,12 @@ foreach ($a in $it.Attachments) {
   if (-not (EvAttOk $a)) { if (EvInlinePic $a) { $inl = $true } else { continue } }
   $n = ([string]$a.FileName) -replace '[\\/:*?"<>|]', '_'
   $p = Join-Path $dir $n
+  # 1.4.3: two attachments with the same name in one email are both kept (image001 (2).png …), not saved over each other
+  $k = 2
+  while (Test-Path -LiteralPath $p) {
+    $p = Join-Path $dir ([IO.Path]::GetFileNameWithoutExtension($n) + " ($k)" + [IO.Path]::GetExtension($n))
+    $k++
+  }
   $a.SaveAsFile($p)
   $o = @{ n = [string]$a.FileName; path = $p; size = (Get-Item -LiteralPath $p).Length }
   if ($inl) { $o.inl = 1 }
