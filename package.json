@@ -1,7 +1,7 @@
 {
   "name": "eightvoids-desktop",
   "private": true,
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Eight Voids app for Windows, macOS, iPhone / iPad and Android",
   "scripts": {
     "tauri": "tauri"

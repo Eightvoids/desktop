@@ -43,7 +43,7 @@ function Collect($f) {
       else {
         $old = 0
         $ok = $false
-        try { $ok = ([string]$it.MessageClass -like 'IPM.Note*') } catch { }
+        try { $mc = [string]$it.MessageClass; $ok = ($mc -like 'IPM.Note*' -or $mc -like 'IPM.Schedule.Meeting.Request*' -or $mc -like 'IPM.Schedule.Meeting.Canceled*') } catch { }
         if ($ok) { $e = ''; try { $e = [string]$it.EntryID } catch { }; if ($e) { [void]$cand.Add([pscustomobject]@{ t = $rt; e = $e; fo = $rel }); $n++; if ($until -and $n -ge $max) { break } } }
       }
     }
@@ -71,6 +71,27 @@ foreach ($x in $pick) {
   try { if ($it.SenderEmailType -eq 'EX') { $fe = $it.Sender.GetExchangeUser().PrimarySmtpAddress } else { $fe = $it.SenderEmailAddress } } catch { try { $fe = $it.SenderEmailAddress } catch { } }
   $body = ''
   try { $body = [string]$it.Body; if ($body.Length -gt 200000) { $body = $body.Substring(0, 200000) } } catch { }
+  # 1.4.5: a meeting invitation also brings its time, place and people (read only; the invitation is not answered or changed)
+  try {
+    $mc2 = [string]$it.MessageClass
+    if ($mc2 -like 'IPM.Schedule.Meeting*') {
+      $ap = $null; try { $ap = $it.GetAssociatedAppointment($false) } catch { }
+      $mt = [ordered]@{ k = $(if ($mc2 -like '*Canceled*') { 'cancel' } else { 'req' }) }
+      if ($null -ne $ap) {
+        try { $mt.st = ([datetime]$ap.Start).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [Globalization.CultureInfo]::InvariantCulture) } catch { }
+        try { $mt.en = ([datetime]$ap.End).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [Globalization.CultureInfo]::InvariantCulture) } catch { }
+        try { $mt.loc = [string]$ap.Location } catch { }
+        try { $mt.org = [string]$ap.Organizer } catch { }
+        try { $mt.req = [string]$ap.RequiredAttendees } catch { }
+        try { $mt.opt = [string]$ap.OptionalAttendees } catch { }
+        try { $mt.uid = [string]$ap.GlobalAppointmentID } catch { }
+        try { $mt.rec = [bool]$ap.IsRecurring } catch { }
+      }
+      # kept first in the text (the platform's email list carries the first 2,000 characters); long attendee lists are shortened
+      foreach ($kk in @('req', 'opt')) { if ($mt.Contains($kk) -and ([string]$mt[$kk]).Length -gt 600) { $mt[$kk] = ([string]$mt[$kk]).Substring(0, 600) } }
+      $body = "EV-MEETING-DATA:" + (ConvertTo-Json -InputObject $mt -Compress) + "`n`n" + $body
+    }
+  } catch { }
   $att = New-Object System.Collections.ArrayList
   try { foreach ($a in $it.Attachments) {
     if (EvAttOk $a) { [void]$att.Add(@{ n = [string]$a.FileName; size = [int64]$a.Size }) }

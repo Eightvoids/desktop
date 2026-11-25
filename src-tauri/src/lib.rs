@@ -40,6 +40,7 @@ mod outlook {
     pub const READ: &str = include_str!("../ps/outlook_read.ps1");
     pub const SAVE: &str = include_str!("../ps/outlook_save_atts.ps1");
     pub const TEST: &str = include_str!("../ps/outlook_test.ps1");
+    pub const CAL: &str = include_str!("../ps/outlook_calendar.ps1");
 
     #[allow(dead_code)]
     fn b64(data: &[u8]) -> String {
@@ -602,6 +603,15 @@ async fn outlook_read(since: String, folders: Vec<String>, max: u32, until: Opti
     .map_err(|e| e.to_string())?
 }
 
+/// 1.4.5: meetings in the person's own Outlook calendar between two dates (read only), so the platform can show project meetings.
+#[cfg(desktop)]
+#[tauri::command]
+async fn outlook_calendar(from: String, to: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || outlook::run(outlook::CAL, vec![("EV_FROM", from), ("EV_TO", to)]))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Self-test of the Outlook bridge (read only): what it sees in the first ticked folders and the Inbox.
 #[cfg(desktop)]
 #[tauri::command]
@@ -740,7 +750,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder, sync_folders, keep_folders]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_calendar, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder, sync_folders, keep_folders]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.
