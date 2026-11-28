@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aconex tabs</title>
+<style>
+  :root{--bg:#ecebe6;--tab:#dedcd4;--on:#ffffff;--fg:#2b2b28;--mut:#6d6b63;--line:#cfccc2;--acc:#b5793a}
+  @media (prefers-color-scheme: dark){:root{--bg:#17181b;--tab:#24262a;--on:#33363c;--fg:#ecebe6;--mut:#9a988f;--line:#2f3237;--acc:#d39a5a}}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:12.5px "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none}
+  .bar{display:flex;align-items:flex-end;gap:2px;height:40px;padding:0 8px;box-sizing:border-box;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .bar::-webkit-scrollbar{display:none}
+  .lg{display:flex;align-items:center;gap:6px;padding:0 10px 9px 2px;color:var(--mut);white-space:nowrap;font-weight:600}
+  .lg i{width:9px;height:9px;border-radius:50%;background:var(--acc);display:inline-block}
+  .t{display:flex;align-items:center;gap:7px;height:32px;min-width:120px;max-width:240px;padding:0 6px 0 12px;border-radius:9px 9px 0 0;background:var(--tab);color:var(--fg);border:0;cursor:pointer;font:inherit;flex:0 1 auto}
+  .t:hover{filter:brightness(1.05)}
+  .t.on{background:var(--on);font-weight:600}
+  .t .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;text-align:left}
+  .t .d{width:8px;height:8px;border-radius:50%;background:var(--acc);flex:none;animation:p 1s infinite alternate}
+  .t .d.idle{background:#3F8C7B;animation:none}
+  .t .x{width:20px;height:20px;border-radius:5px;display:grid;place-items:center;color:var(--mut);flex:none;font-size:14px;line-height:1}
+  .t .x:hover{background:var(--line);color:var(--fg)}
+  .e{padding:0 0 10px 4px;color:var(--mut)}
+  @keyframes p{to{opacity:.35}}
+</style>
+</head>
+<body>
+<div class="bar" id="bar"><span class="lg"><i></i>Aconex</span><span class="e">Opening…</span></div>
+<script>
+  /* Eight Voids desktop · tab bar of the Aconex window. It has no access to the app: a click only asks for an address
+     (https://acxtab.invalid/…) that the app reads to show or close a tab. */
+  function go(p){location.href='https://acxtab.invalid/'+p}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  window.__acxTabs=function(L){var b=document.getElementById('bar');var h='<span class="lg"><i></i>Aconex</span>';
+    if(!L||!L.length)h+='<span class="e">No document open</span>';
+    (L||[]).forEach(function(t){h+='<button class="t'+(t.active?' on':'')+'" data-l="'+esc(t.label)+'" title="'+esc(t.title)+(t.busy?' · downloading':'')+'"><span class="d'+(t.busy?'':' idle')+'"></span><span class="n">'+esc(t.title||t.label)+'</span><span class="x" data-x="'+esc(t.label)+'" title="Close this tab">×</span></button>'});
+    b.innerHTML=h;var on=b.querySelector('.t.on');if(on&&on.scrollIntoView)on.scrollIntoView({inline:'nearest',block:'nearest'})};
+  document.addEventListener('click',function(e){var x=e.target.closest('[data-x]');if(x){e.preventDefault();e.stopPropagation();return go('close/'+encodeURIComponent(x.getAttribute('data-x')))}
+    var t=e.target.closest('[data-l]');if(t)go('select/'+encodeURIComponent(t.getAttribute('data-l')))});
+  document.addEventListener('auxclick',function(e){if(e.button!==1)return;var t=e.target.closest('[data-l]');if(t){e.preventDefault();go('close/'+encodeURIComponent(t.getAttribute('data-l')))}});
+  setTimeout(function(){go('ready')},50);
+</script>
+</body>
+</html>

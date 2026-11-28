@@ -18,11 +18,12 @@ function scroller(el){var x=el;while(x&&x!==x.ownerDocument.body){try{var cs=x.o
 var EXP={n:-1,same:0,done:false,clicks:0};
 function expand(D,t){if(EXP.done)return true;var R=bodyRows(t).length,tot=totalOf(D);if(tot&&R>=tot){EXP.done=true;return true}
  var box=t.parentElement;for(var u=0;u<5&&box&&box.parentElement;u++)box=box.parentElement;
- var more=null;if(box){var L=box.querySelectorAll('button,a,[role=button],span,div');for(var i=0;i<L.length;i++){var tx=txt(L[i]).replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();if(/^(show|load|view|see) (more|all)( documents| attachments| files| rows)?$|^more$|^show all \d+/i.test(tx)&&vis(L[i])&&!L[i].children.length){more=L[i];break}}}
+ var more=null;/* Aconex: "+190 more..." under the attachments list (ng-click="showAll()") */for(var q=0;q<D.length&&!more;q++){var sa=D[q].querySelector('.mailAttachedDocuments-showAll a,[ng-click="showAll()"],[ng-click*="showAll"],[ng-click*="showMore"],[ng-click*="loadMore"]');if(sa&&vis(sa))more=sa}
+ if(!more&&box){var L=box.querySelectorAll('button,a,[role=button],span,div');for(var i=0;i<L.length;i++){var tx=txt(L[i]).replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();if(/^(show|load|view|see) (more|all)( documents| attachments| files| rows)?$|^more$|^show all \d+|^\d+ more$|^show \d+ more$/i.test(tx)&&vis(L[i])&&!L[i].children.length){more=L[i];break}}}
  if(more&&EXP.clicks<60){EXP.clicks++;try{more.click()}catch(e){}}
  var sc=scroller(t.tBodies[0]||t);if(sc)sc.scrollTop=sc.scrollHeight;try{t.rows[t.rows.length-1].scrollIntoView({block:'end'})}catch(e){}
- if(R===EXP.n){EXP.same++}else{EXP.same=0;EXP.n=R}
- if(EXP.same>=4){EXP.done=true;try{(t.tHead||t).scrollIntoView({block:'start'})}catch(e){}return true}return false}
+ if(more)EXP.ct=Date.now();if(R===EXP.n){EXP.same++}else{EXP.same=0;EXP.n=R}
+ if(EXP.same>=(EXP.ct?20:4)&&Date.now()-(EXP.ct||0)>3000){EXP.done=true;try{(t.tHead||t).scrollIntoView({block:'start'})}catch(e){}return true}return false}
 function key(x){return String(x||'').toUpperCase().replace(/\s+/g,'')}
 function tryList(D){if(LS)return;var t=attTable(D);if(!t){if(MS&&n>30){LS=true;save('evatt.json',{ev:'aconex-files',rows:[],total:totalOf(D)})}return}if(!expand(D,t))return;LS=true;save('evatt.json',{ev:'aconex-files',rows:rowsOf(t),total:totalOf(D)})}
 function tryDl(D){if(DL)return;if(!PICK){var all=findBtn(D,/^download all( files| attachments| documents)?$/i);if(all){DL=true;all.click();return}}

@@ -656,6 +656,135 @@ fn acx_key_clean(k: &str) -> String {
     k.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '&').map(|c| if c == '&' { '_' } else { c }).take(60).collect()
 }
 
+// 1.5.1: one Aconex window with tabs (like a browser) – every document opens as its own tab; the tab bar on top lets you pick
+// which one you see. Several tabs download at the same time; a new tab never takes the focus from your work.
+#[cfg(desktop)]
+const ACX_TAB_H: f64 = 40.0;
+// (tab label, title, downloads running)
+#[cfg(desktop)]
+static ACX_TABS: std::sync::Mutex<Vec<(String, String, i32)>> = std::sync::Mutex::new(Vec::new());
+#[cfg(desktop)]
+static ACX_ACTIVE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+#[cfg(desktop)]
+fn acx_layout(app: &AppHandle) {
+    let win = match app.get_window("acxwin") {
+        Some(w) => w,
+        None => return,
+    };
+    let f = win.scale_factor().unwrap_or(1.0);
+    let sz = match win.inner_size() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    if sz.width == 0 || sz.height == 0 || f <= 0.0 {
+        return;
+    }
+    let w = sz.width as f64 / f;
+    let h = sz.height as f64 / f;
+    if let Some(t) = app.get_webview("acxtabs") {
+        let _ = t.set_position(tauri::LogicalPosition::new(0.0, 0.0));
+        let _ = t.set_size(tauri::LogicalSize::new(w, ACX_TAB_H));
+    }
+    let active = ACX_ACTIVE.lock().map(|g| g.clone()).unwrap_or_default();
+    let tabs = ACX_TABS.lock().map(|g| g.clone()).unwrap_or_default();
+    for (label, _, _) in tabs.iter() {
+        if let Some(v) = app.get_webview(label) {
+            // the tab you look at fills the window; the others keep working just outside it
+            let x = if *label == active { 0.0 } else { -(w + 200.0) };
+            let _ = v.set_size(tauri::LogicalSize::new(w, (h - ACX_TAB_H).max(200.0)));
+            let _ = v.set_position(tauri::LogicalPosition::new(x, ACX_TAB_H));
+        }
+    }
+}
+
+#[cfg(desktop)]
+fn acx_tabs_emit(app: &AppHandle) {
+    let active = ACX_ACTIVE.lock().map(|g| g.clone()).unwrap_or_default();
+    let tabs = ACX_TABS.lock().map(|g| g.clone()).unwrap_or_default();
+    let list: Vec<serde_json::Value> = tabs
+        .iter()
+        .map(|(l, t, b)| serde_json::json!({ "label": l, "title": t, "busy": *b, "active": *l == active }))
+        .collect();
+    if let Some(t) = app.get_webview("acxtabs") {
+        let js = format!("window.__acxTabs&&window.__acxTabs({})", serde_json::Value::Array(list));
+        let _ = t.eval(&js);
+    }
+}
+
+#[cfg(desktop)]
+fn acx_tab_select(app: &AppHandle, label: &str) {
+    let known = ACX_TABS.lock().map(|g| g.iter().any(|(l, _, _)| l == label)).unwrap_or(false);
+    if !known {
+        return;
+    }
+    if let Ok(mut g) = ACX_ACTIVE.lock() {
+        *g = label.to_string();
+    }
+    acx_layout(app);
+    acx_tabs_emit(app);
+}
+
+#[cfg(desktop)]
+fn acx_tab_close(app: &AppHandle, label: &str) {
+    if let Some(v) = app.get_webview(label) {
+        let _ = v.close();
+    }
+    let mut next = String::new();
+    if let Ok(mut g) = ACX_TABS.lock() {
+        g.retain(|(l, _, _)| l != label);
+        if let Some((l, _, _)) = g.last() {
+            next = l.clone();
+        }
+    }
+    if let Ok(mut a) = ACX_ACTIVE.lock() {
+        if *a == label {
+            *a = next;
+        }
+    }
+    acx_layout(app);
+    acx_tabs_emit(app);
+}
+
+// the tab bar is a plain page without access to the app: its clicks are read here from the address it asks for
+#[cfg(desktop)]
+fn acx_tab_nav(app: &AppHandle, u: &tauri::Url) -> bool {
+    if u.host_str() != Some("acxtab.invalid") {
+        return true;
+    }
+    let path = u.path().to_string();
+    let mut parts = path.trim_start_matches('/').splitn(2, '/');
+    let what = parts.next().unwrap_or("").to_string();
+    let label: String = parts
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .take(40)
+        .collect();
+    let h = app.clone();
+    std::thread::spawn(move || match what.as_str() {
+        "select" => acx_tab_select(&h, &label),
+        "close" => acx_tab_close(&h, &label),
+        _ => {
+            acx_layout(&h);
+            acx_tabs_emit(&h);
+        }
+    });
+    false
+}
+
+#[cfg(desktop)]
+fn acx_busy(app: &AppHandle, label: &str, d: i32) {
+    if let Ok(mut g) = ACX_TABS.lock() {
+        if let Some(t) = g.iter_mut().find(|(l, _, _)| l == label) {
+            t.2 = (t.2 + d).max(0);
+        }
+    }
+    let h = app.clone();
+    std::thread::spawn(move || acx_tabs_emit(&h));
+}
+
 #[cfg(desktop)]
 #[tauri::command]
 async fn aconex_open(
@@ -675,140 +804,164 @@ async fn aconex_open(
     if let Ok(mut g) = ACX_KEY.lock() {
         *g = k.clone();
     }
-    let title = format!("Aconex · {} · downloads go to Eight Voids", if k.is_empty() { "-" } else { &k });
     // 1.4.8: the page helper comes from the Eight Voids page (so it can improve without a new app); the built-in one otherwise
     let js = match script {
         Some(s) if !s.trim().is_empty() && s.len() < 400_000 => s,
         _ => ACX_JS.to_string(),
     };
-    // one Aconex window at a time: the earlier one closes (the Aconex sign-in is kept by the app)
-    // 1.5.0: during an automatic run ("bg") the next document opens quietly – same place and size as the earlier Aconex window,
-    // without taking the focus from what you are working on, and minimised again if you had minimised it.
-    // 1.5.0 turbo: with "slot" up to 3 Aconex windows download at the same time – only the earlier window of the same slot closes.
     let quiet = bg.unwrap_or(false);
+    // with "slot" up to 3 tabs download at the same time – only the earlier tab of the same slot closes
     let mine = match slot {
-        Some(sl) => format!("aconex{}-", sl.min(9)),
-        None => "aconex".to_string(),
+        Some(sl) => format!("acx{}-", sl.min(9)),
+        None => "acx".to_string(),
     };
-    let mut had = false;
-    let mut place: Option<(f64, f64, f64, f64)> = None;
-    let mut was_min = false;
-    for (label, w) in app.webview_windows() {
-        if !label.starts_with("aconex") {
-            continue;
-        }
-        let same = label.starts_with(&mine);
-        if quiet && (!had || same) {
-            had = true;
-            was_min = w.is_minimized().unwrap_or(false);
-            place = None;
-            if !was_min {
-                if let (Ok(p), Ok(sz), Ok(f)) = (w.outer_position(), w.inner_size(), w.scale_factor()) {
-                    if f > 0.0 && sz.width > 0 && sz.height > 0 {
-                        place = Some((p.x as f64 / f, p.y as f64 / f, sz.width as f64 / f, sz.height as f64 / f));
-                    }
-                }
-            }
-        }
-        if same {
-            let _ = w.close();
+    let old: Vec<String> = ACX_TABS
+        .lock()
+        .map(|g| g.iter().map(|(l, _, _)| l.clone()).filter(|l| l.starts_with(&mine)).collect())
+        .unwrap_or_default();
+    let active_before = ACX_ACTIVE.lock().map(|g| g.clone()).unwrap_or_default();
+    let was_active = old.iter().any(|l| *l == active_before);
+    for l in old.iter() {
+        if let Some(v) = app.get_webview(l) {
+            let _ = v.close();
         }
     }
+    if let Ok(mut g) = ACX_TABS.lock() {
+        g.retain(|(l, _, _)| !old.contains(l));
+    }
+    // the one Aconex window (made the first time, with its tab bar)
+    let win = match app.get_window("acxwin") {
+        Some(w) => w,
+        None => {
+            if let Ok(mut g) = ACX_TABS.lock() {
+                g.clear();
+            }
+            let w = tauri::window::WindowBuilder::new(&app, "acxwin")
+                .title("Aconex · downloads go to Eight Voids")
+                .inner_size(1240.0, 880.0)
+                .min_inner_size(800.0, 600.0)
+                .center()
+                .focused(!quiet)
+                .build()
+                .map_err(|e| e.to_string())?;
+            let hn = app.clone();
+            let tb = tauri::webview::WebviewBuilder::new("acxtabs", WebviewUrl::App("acxtabs.html".into()))
+                .on_navigation(move |nu| acx_tab_nav(&hn, nu));
+            w.add_child(tb, tauri::LogicalPosition::new(0.0, 0.0), tauri::LogicalSize::new(1240.0, ACX_TAB_H))
+                .map_err(|e| e.to_string())?;
+            w
+        }
+    };
     let n = ACX_N.fetch_add(1, Ordering::SeqCst);
     let base = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("aconex");
     let h = app.clone();
     let label = match slot {
-        Some(sl) => format!("aconex{}-{}", sl.min(9), n),
-        None => format!("aconex{}", n),
+        Some(sl) => format!("acx{}-{}", sl.min(9), n),
+        None => format!("acx{}", n),
     };
-    // the files of this window always go to this document's folder (several windows can download at once)
+    // the files of this tab always go to this document's folder (several tabs can download at once)
     let wkey = k.clone();
-    let mut b = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(u))
-        .title(title)
-        .min_inner_size(800.0, 600.0)
-        .on_download(move |_wv, ev| {
-            match ev {
-                tauri::webview::DownloadEvent::Requested { url, destination, .. } => {
-                    let k = wkey.clone();
-                    let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
-                    let _ = std::fs::create_dir_all(&dir);
-                    let mut name = destination
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "download".to_string());
-                    let ext = std::path::Path::new(&name)
-                        .extension()
-                        .map(|e| format!(".{}", e.to_string_lossy()))
-                        .unwrap_or_default();
-                    // very long names (Aconex zips) are shortened here so the full path stays short; the extension is kept
-                    if name.chars().count() > 80 {
-                        let stem: String = name.chars().take(80 - ext.chars().count().min(20)).collect();
-                        name = format!("{}{}", stem.trim_end(), ext);
-                    }
-                    // a second file with the same name never replaces the first
-                    let stem0: String = name.chars().take(name.chars().count() - ext.chars().count()).collect();
-                    let mut target = dir.join(&name);
-                    let mut i = 2;
-                    while target.exists() && i < 100 {
-                        target = dir.join(format!("{} ({}){}", stem0, i, ext));
-                        i += 1;
-                    }
-                    let _ = h.emit_to(
-                        tauri::EventTarget::webview_window("main"),
-                        "ev-aconex-dl",
-                        serde_json::json!({ "path": target.to_string_lossy().to_string(), "start": true }),
-                    );
-                    if let Ok(mut g) = ACX_DL.lock() {
-                        g.push((url.to_string(), target.to_string_lossy().to_string()));
-                        if g.len() > 400 {
-                            g.remove(0);
-                        }
-                    }
-                    *destination = target;
-                    true
+    let wlab = label.clone();
+    let mut b = tauri::webview::WebviewBuilder::new(label.clone(), WebviewUrl::External(u)).on_download(move |_wv, ev| {
+        match ev {
+            tauri::webview::DownloadEvent::Requested { url, destination, .. } => {
+                let k = wkey.clone();
+                let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
+                let _ = std::fs::create_dir_all(&dir);
+                let mut name = destination
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "download".to_string());
+                let ext = std::path::Path::new(&name)
+                    .extension()
+                    .map(|e| format!(".{}", e.to_string_lossy()))
+                    .unwrap_or_default();
+                // very long names (Aconex zips) are shortened here so the full path stays short; the extension is kept
+                if name.chars().count() > 80 {
+                    let stem: String = name.chars().take(80 - ext.chars().count().min(20)).collect();
+                    name = format!("{}{}", stem.trim_end(), ext);
                 }
-                tauri::webview::DownloadEvent::Finished { url, path, success, .. } => {
-                    let mut p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                    let u = url.to_string();
-                    if let Ok(mut g) = ACX_DL.lock() {
-                        if let Some(i) = g.iter().rposition(|(a, _)| *a == u) {
-                            let (_, t) = g.remove(i);
-                            if p.is_empty() {
-                                p = t;
-                            }
-                        }
-                    }
-                    let _ = h.emit_to(
-                        tauri::EventTarget::webview_window("main"),
-                        "ev-aconex-dl",
-                        serde_json::json!({ "path": p, "ok": success }),
-                    );
-                    true
+                // a second file with the same name never replaces the first
+                let stem0: String = name.chars().take(name.chars().count() - ext.chars().count()).collect();
+                let mut target = dir.join(&name);
+                let mut i = 2;
+                while target.exists() && i < 100 {
+                    target = dir.join(format!("{} ({}){}", stem0, i, ext));
+                    i += 1;
                 }
-                _ => true,
+                let _ = h.emit_to(
+                    tauri::EventTarget::webview_window("main"),
+                    "ev-aconex-dl",
+                    serde_json::json!({ "path": target.to_string_lossy().to_string(), "start": true }),
+                );
+                if let Ok(mut g) = ACX_DL.lock() {
+                    g.push((url.to_string(), target.to_string_lossy().to_string()));
+                    if g.len() > 400 {
+                        g.remove(0);
+                    }
+                }
+                *destination = target;
+                acx_busy(&h, &wlab, 1);
+                true
             }
-        });
+            tauri::webview::DownloadEvent::Finished { url, path, success, .. } => {
+                let mut p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                let u = url.to_string();
+                if let Ok(mut g) = ACX_DL.lock() {
+                    if let Some(i) = g.iter().rposition(|(a, _)| *a == u) {
+                        let (_, t) = g.remove(i);
+                        if p.is_empty() {
+                            p = t;
+                        }
+                    }
+                }
+                let _ = h.emit_to(
+                    tauri::EventTarget::webview_window("main"),
+                    "ev-aconex-dl",
+                    serde_json::json!({ "path": p, "ok": success }),
+                );
+                acx_busy(&h, &wlab, -1);
+                true
+            }
+            _ => true,
+        }
+    });
     if auto.unwrap_or(true) {
         b = b.initialization_script(&js);
     }
-    match place {
-        Some((x, y, w, h)) if w >= 800.0 && h >= 600.0 => {
-            b = b.inner_size(w, h).position(x, y);
+    let f = win.scale_factor().unwrap_or(1.0);
+    let (ww, wh) = match win.inner_size() {
+        Ok(s) if s.width > 0 && f > 0.0 => (s.width as f64 / f, s.height as f64 / f),
+        _ => (1240.0, 880.0),
+    };
+    let wv = win
+        .add_child(b, tauri::LogicalPosition::new(-(ww + 200.0), ACX_TAB_H), tauri::LogicalSize::new(ww, (wh - ACX_TAB_H).max(200.0)))
+        .map_err(|e| e.to_string())?;
+    let title = {
+        let mut t = k.clone();
+        if let Some(i) = t.find("__L") {
+            let rest = t[i + 3..].to_string();
+            t = format!("{} · link {}", &t[..i], rest);
         }
-        _ => {
-            b = b.inner_size(1240.0, 880.0).center();
+        t
+    };
+    if let Ok(mut g) = ACX_TABS.lock() {
+        g.push((label.clone(), title, 0));
+    }
+    // the first tab, a tab replacing the one you were looking at, or an opened-by-hand document is shown; others open behind
+    if let Ok(mut a) = ACX_ACTIVE.lock() {
+        let still = ACX_TABS.lock().map(|g| g.iter().any(|(l, _, _)| *l == *a)).unwrap_or(false);
+        if !quiet || !still || was_active {
+            *a = label.clone();
         }
     }
-    if quiet && had {
-        b = b.focused(false);
-    }
-    let _w = b.build().map_err(|e| e.to_string())?;
-    if quiet && had && was_min {
-        let _ = _w.minimize();
-    }
+    acx_layout(&app);
+    acx_tabs_emit(&app);
     #[cfg(windows)]
-    acx_autofill(&_w);
-    // "new2" tells the Eight Voids page that several Aconex windows may run at once
+    acx_autofill(&wv);
+    #[cfg(not(windows))]
+    let _ = wv;
+    // "new2" tells the Eight Voids page that several Aconex tabs may run at once
     let r: &str = if slot.is_some() { "new2" } else { "new" };
     Ok(r.to_string())
 }
@@ -817,7 +970,7 @@ async fn aconex_open(
 // fills it in next time. The password is kept by Windows, encrypted for this Windows user (DPAPI) inside the app's own
 // browser profile; Eight Voids code never reads it, and the Eight Voids pages cannot reach it.
 #[cfg(windows)]
-fn acx_autofill(w: &tauri::WebviewWindow) {
+fn acx_autofill(w: &tauri::Webview) {
     let _ = w.with_webview(|wv| unsafe {
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
         use windows_core::Interface;
@@ -966,6 +1119,17 @@ pub fn run() {
     // (like Teams), so notifications still arrive. Quit from the tray menu.
     #[cfg(desktop)]
     let builder = builder.on_window_event(|window, event| {
+        if window.label() == "acxwin" {
+            match event {
+                WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => acx_layout(window.app_handle()),
+                WindowEvent::Destroyed => {
+                    if let Ok(mut g) = ACX_TABS.lock() {
+                        g.clear();
+                    }
+                }
+                _ => {}
+            }
+        }
         if let WindowEvent::CloseRequested { api, .. } = event {
             if cfg!(windows) && window.label() == "main" {
                 api.prevent_close();
