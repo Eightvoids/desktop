@@ -641,10 +641,11 @@ async fn outlook_save_atts(app: AppHandle, entry: String) -> Result<String, Stri
 #[cfg(desktop)]
 static ACX_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-// Tries Aconex's own "Download all" once per page (only an element whose whole text is "Download all" /
-// "Download all files"); otherwise the person clicks Download. Nothing else on the page is touched.
+// 1.4.7: the Aconex page helper (acx.js) – presses Aconex's own "Download all" once when an element with exactly that
+// text shows, and saves the opened mail page (text, layout, its logos) as evmail.json so Eight Voids can make the
+// "<REF>.pdf" print of the mail. It only reads the page; nothing is typed, sent or changed in Aconex.
 #[cfg(desktop)]
-const ACX_JS: &str = r#"(function(){try{var done=false;function tryIt(){if(done)return;var L=document.querySelectorAll('button,a,[role=button],[role=menuitem]');for(var i=0;i<L.length;i++){var t=(L[i].innerText||L[i].textContent||'').replace(/\s+/g,' ').trim();if(/^download all( files| attachments)?$/i.test(t)&&L[i].offsetParent!==null){done=true;L[i].click();return}}}var n=0,iv=setInterval(function(){n++;tryIt();if(done||n>40)clearInterval(iv)},750)}catch(e){}})();"#;
+const ACX_JS: &str = include_str!("../acx.js");
 
 #[cfg(desktop)]
 fn acx_key_clean(k: &str) -> String {
@@ -685,10 +686,19 @@ async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool
                     let k = ACX_KEY.lock().map(|g| g.clone()).unwrap_or_default();
                     let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
                     let _ = std::fs::create_dir_all(&dir);
-                    let name = destination
+                    let mut name = destination
                         .file_name()
-                        .map(|n| n.to_os_string())
-                        .unwrap_or_else(|| std::ffi::OsString::from("download"));
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "download".to_string());
+                    // very long names (Aconex zips) are shortened here so the full path stays short; the extension is kept
+                    if name.chars().count() > 80 {
+                        let ext = std::path::Path::new(&name)
+                            .extension()
+                            .map(|e| format!(".{}", e.to_string_lossy()))
+                            .unwrap_or_default();
+                        let stem: String = name.chars().take(80 - ext.chars().count().min(20)).collect();
+                        name = format!("{}{}", stem.trim_end(), ext);
+                    }
                     *destination = dir.join(name);
                     true
                 }
