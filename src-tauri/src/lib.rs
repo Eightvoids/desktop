@@ -640,6 +640,8 @@ async fn outlook_save_atts(app: AppHandle, entry: String) -> Result<String, Stri
 // under the document's reference and handed to the Eight Voids page, which files them into 502 Attachments.
 #[cfg(desktop)]
 static ACX_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+// 1.5.0: where each Aconex download is being saved (by its web address) – used when Windows reports "finished" without the file path
+static ACX_DL: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 #[cfg(desktop)]
 static ACX_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -726,7 +728,7 @@ async fn aconex_open(
         .min_inner_size(800.0, 600.0)
         .on_download(move |_wv, ev| {
             match ev {
-                tauri::webview::DownloadEvent::Requested { destination, .. } => {
+                tauri::webview::DownloadEvent::Requested { url, destination, .. } => {
                     let k = wkey.clone();
                     let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
                     let _ = std::fs::create_dir_all(&dir);
@@ -756,11 +758,26 @@ async fn aconex_open(
                         "ev-aconex-dl",
                         serde_json::json!({ "path": target.to_string_lossy().to_string(), "start": true }),
                     );
+                    if let Ok(mut g) = ACX_DL.lock() {
+                        g.push((url.to_string(), target.to_string_lossy().to_string()));
+                        if g.len() > 400 {
+                            g.remove(0);
+                        }
+                    }
                     *destination = target;
                     true
                 }
-                tauri::webview::DownloadEvent::Finished { path, success, .. } => {
-                    let p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                tauri::webview::DownloadEvent::Finished { url, path, success, .. } => {
+                    let mut p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                    let u = url.to_string();
+                    if let Ok(mut g) = ACX_DL.lock() {
+                        if let Some(i) = g.iter().rposition(|(a, _)| *a == u) {
+                            let (_, t) = g.remove(i);
+                            if p.is_empty() {
+                                p = t;
+                            }
+                        }
+                    }
                     let _ = h.emit_to(
                         tauri::EventTarget::webview_window("main"),
                         "ev-aconex-dl",
