@@ -634,6 +634,83 @@ async fn outlook_save_atts(app: AppHandle, entry: String) -> Result<String, Stri
         .map_err(|e| e.to_string())?
 }
 
+// ---------- 1.4.6: Aconex window – the person signs in on Aconex's own page; downloads go to Eight Voids ----------
+// Eight Voids never sees or keeps the Aconex password: this is a normal browser window on Aconex (no access to the
+// app's commands). Each document's link opens here; files downloaded in it are saved in the app's own cache folder
+// under the document's reference and handed to the Eight Voids page, which files them into 502 Attachments.
+#[cfg(desktop)]
+static ACX_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+// Tries Aconex's own "Download all" once per page (only an element whose whole text is "Download all" /
+// "Download all files"); otherwise the person clicks Download. Nothing else on the page is touched.
+#[cfg(desktop)]
+const ACX_JS: &str = r#"(function(){try{var done=false;function tryIt(){if(done)return;var L=document.querySelectorAll('button,a,[role=button],[role=menuitem]');for(var i=0;i<L.length;i++){var t=(L[i].innerText||L[i].textContent||'').replace(/\s+/g,' ').trim();if(/^download all( files| attachments)?$/i.test(t)&&L[i].offsetParent!==null){done=true;L[i].click();return}}}var n=0,iv=setInterval(function(){n++;tryIt();if(done||n>40)clearInterval(iv)},750)}catch(e){}})();"#;
+
+#[cfg(desktop)]
+fn acx_key_clean(k: &str) -> String {
+    k.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_' || *c == '&').map(|c| if c == '&' { '_' } else { c }).take(60).collect()
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool>) -> Result<String, String> {
+    let u: tauri::Url = url.trim().parse().map_err(|_| "This is not a web link.".to_string())?;
+    if u.scheme() != "https" {
+        return Err("Only https links are opened.".into());
+    }
+    let k = acx_key_clean(&key);
+    if let Ok(mut g) = ACX_KEY.lock() {
+        *g = k.clone();
+    }
+    let title = format!("Aconex · {} · downloads go to Eight Voids", if k.is_empty() { "-" } else { &k });
+    if let Some(w) = app.get_webview_window("aconex") {
+        let to = serde_json::to_string(u.as_str()).map_err(|e| e.to_string())?;
+        w.eval(&format!("window.location.href={};", to)).map_err(|e| e.to_string())?;
+        let _ = w.set_title(&title);
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+        return Ok("open".into());
+    }
+    let base = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("aconex");
+    let h = app.clone();
+    let mut b = WebviewWindowBuilder::new(&app, "aconex", WebviewUrl::External(u))
+        .title(title)
+        .inner_size(1240.0, 880.0)
+        .min_inner_size(800.0, 600.0)
+        .center()
+        .on_download(move |_wv, ev| {
+            match ev {
+                tauri::webview::DownloadEvent::Requested { destination, .. } => {
+                    let k = ACX_KEY.lock().map(|g| g.clone()).unwrap_or_default();
+                    let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
+                    let _ = std::fs::create_dir_all(&dir);
+                    let name = destination
+                        .file_name()
+                        .map(|n| n.to_os_string())
+                        .unwrap_or_else(|| std::ffi::OsString::from("download"));
+                    *destination = dir.join(name);
+                    true
+                }
+                tauri::webview::DownloadEvent::Finished { path, success, .. } => {
+                    let p = path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                    let _ = h.emit_to(
+                        tauri::EventTarget::webview_window("main"),
+                        "ev-aconex-dl",
+                        serde_json::json!({ "path": p, "ok": success }),
+                    );
+                    true
+                }
+                _ => true,
+            }
+        });
+    if auto.unwrap_or(true) {
+        b = b.initialization_script(ACX_JS);
+    }
+    b.build().map_err(|e| e.to_string())?;
+    Ok("new".into())
+}
+
 #[cfg(desktop)]
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -669,6 +746,18 @@ fn setup_main(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     let name = e.file_name().to_string_lossy().to_string();
                     if age > 3600 && name.starts_with("evatt-") {
                         let _ = std::fs::remove_dir_all(e.path());
+                    }
+                    // 1.4.6: files downloaded in the Aconex window are kept 3 days after they were filed
+                    if name == "aconex" {
+                        if let Ok(sub) = std::fs::read_dir(e.path()) {
+                            for d in sub.flatten() {
+                                let a2 = d.metadata().and_then(|m| m.modified()).ok()
+                                    .and_then(|t| t.elapsed().ok()).map(|x| x.as_secs()).unwrap_or(0);
+                                if a2 > 259200 {
+                                    let _ = std::fs::remove_dir_all(d.path());
+                                }
+                            }
+                        }
                     }
                     // installers of earlier updates are removed a day later
                     if age > 86400 && name.starts_with("EightVoids-Update-") {
@@ -750,7 +839,7 @@ pub fn run() {
 
     // Desktop: the Outlook bridge (read only) and in-app updates.
     #[cfg(desktop)]
-    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_calendar, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder, sync_folders, keep_folders]);
+    let builder = builder.invoke_handler(tauri::generate_handler![outlook_folders, outlook_read, outlook_calendar, outlook_save_atts, outlook_test, update_download, update_install, update_pending, rename_in_folder, sync_folders, keep_folders, aconex_open]);
 
     // On Windows, closing the main window keeps Eight Voids running in the tray
     // (like Teams), so notifications still arrive. Quit from the tray menu.
