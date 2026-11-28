@@ -662,6 +662,8 @@ async fn aconex_open(
     key: String,
     auto: Option<bool>,
     script: Option<String>,
+    bg: Option<bool>,
+    slot: Option<u32>,
 ) -> Result<String, String> {
     let u: tauri::Url = url.trim().parse().map_err(|_| "This is not a web link.".to_string())?;
     if u.scheme() != "https" {
@@ -678,23 +680,54 @@ async fn aconex_open(
         _ => ACX_JS.to_string(),
     };
     // one Aconex window at a time: the earlier one closes (the Aconex sign-in is kept by the app)
+    // 1.5.0: during an automatic run ("bg") the next document opens quietly – same place and size as the earlier Aconex window,
+    // without taking the focus from what you are working on, and minimised again if you had minimised it.
+    // 1.5.0 turbo: with "slot" up to 3 Aconex windows download at the same time – only the earlier window of the same slot closes.
+    let quiet = bg.unwrap_or(false);
+    let mine = match slot {
+        Some(sl) => format!("aconex{}-", sl.min(9)),
+        None => "aconex".to_string(),
+    };
+    let mut had = false;
+    let mut place: Option<(f64, f64, f64, f64)> = None;
+    let mut was_min = false;
     for (label, w) in app.webview_windows() {
-        if label.starts_with("aconex") {
+        if !label.starts_with("aconex") {
+            continue;
+        }
+        let same = label.starts_with(&mine);
+        if quiet && (!had || same) {
+            had = true;
+            was_min = w.is_minimized().unwrap_or(false);
+            place = None;
+            if !was_min {
+                if let (Ok(p), Ok(sz), Ok(f)) = (w.outer_position(), w.inner_size(), w.scale_factor()) {
+                    if f > 0.0 && sz.width > 0 && sz.height > 0 {
+                        place = Some((p.x as f64 / f, p.y as f64 / f, sz.width as f64 / f, sz.height as f64 / f));
+                    }
+                }
+            }
+        }
+        if same {
             let _ = w.close();
         }
     }
     let n = ACX_N.fetch_add(1, Ordering::SeqCst);
     let base = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("aconex");
     let h = app.clone();
-    let mut b = WebviewWindowBuilder::new(&app, format!("aconex{}", n), WebviewUrl::External(u))
+    let label = match slot {
+        Some(sl) => format!("aconex{}-{}", sl.min(9), n),
+        None => format!("aconex{}", n),
+    };
+    // the files of this window always go to this document's folder (several windows can download at once)
+    let wkey = k.clone();
+    let mut b = WebviewWindowBuilder::new(&app, label, WebviewUrl::External(u))
         .title(title)
-        .inner_size(1240.0, 880.0)
         .min_inner_size(800.0, 600.0)
-        .center()
         .on_download(move |_wv, ev| {
             match ev {
                 tauri::webview::DownloadEvent::Requested { destination, .. } => {
-                    let k = ACX_KEY.lock().map(|g| g.clone()).unwrap_or_default();
+                    let k = wkey.clone();
                     let dir = base.join(if k.is_empty() { "_".to_string() } else { k });
                     let _ = std::fs::create_dir_all(&dir);
                     let mut name = destination
@@ -741,10 +774,26 @@ async fn aconex_open(
     if auto.unwrap_or(true) {
         b = b.initialization_script(&js);
     }
+    match place {
+        Some((x, y, w, h)) if w >= 800.0 && h >= 600.0 => {
+            b = b.inner_size(w, h).position(x, y);
+        }
+        _ => {
+            b = b.inner_size(1240.0, 880.0).center();
+        }
+    }
+    if quiet && had {
+        b = b.focused(false);
+    }
     let _w = b.build().map_err(|e| e.to_string())?;
+    if quiet && had && was_min {
+        let _ = _w.minimize();
+    }
     #[cfg(windows)]
     acx_autofill(&_w);
-    Ok("new".into())
+    // "new2" tells the Eight Voids page that several Aconex windows may run at once
+    let r: &str = if slot.is_some() { "new2" } else { "new" };
+    Ok(r.to_string())
 }
 
 // 1.4.9: in the Aconex window only, the browser engine (Microsoft Edge WebView2) may offer to save the Aconex password and
