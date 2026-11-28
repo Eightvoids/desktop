@@ -1,6 +1,6 @@
 [package]
 name = "eightvoids"
-version = "1.4.8"
+version = "1.4.9"
 description = "Eight Voids app (desktop and mobile)"
 authors = ["Eight Voids"]
 edition = "2021"
@@ -27,6 +27,11 @@ tauri-plugin-persisted-scope = "2"
 # 1.4.2: checks the signature of app updates (the same check Tauri's own updater uses)
 minisign-verify = "0.2"
 base64 = "0.22"
+
+# 1.4.9: lets the Aconex window offer to save the Aconex password (kept encrypted by Windows) – same versions as Tauri uses
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows-core = "0.62"
 
 [profile.release]
 codegen-units = 1

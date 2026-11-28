@@ -741,8 +741,29 @@ async fn aconex_open(
     if auto.unwrap_or(true) {
         b = b.initialization_script(&js);
     }
-    b.build().map_err(|e| e.to_string())?;
+    let _w = b.build().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    acx_autofill(&_w);
     Ok("new".into())
+}
+
+// 1.4.9: in the Aconex window only, the browser engine (Microsoft Edge WebView2) may offer to save the Aconex password and
+// fills it in next time. The password is kept by Windows, encrypted for this Windows user (DPAPI) inside the app's own
+// browser profile; Eight Voids code never reads it, and the Eight Voids pages cannot reach it.
+#[cfg(windows)]
+fn acx_autofill(w: &tauri::WebviewWindow) {
+    let _ = w.with_webview(|wv| unsafe {
+        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings4;
+        use windows_core::Interface;
+        if let Ok(core) = wv.controller().CoreWebView2() {
+            if let Ok(st) = core.Settings() {
+                if let Ok(s4) = st.cast::<ICoreWebView2Settings4>() {
+                    let _ = s4.SetIsPasswordAutosaveEnabled(true);
+                    let _ = s4.SetIsGeneralAutofillEnabled(true);
+                }
+            }
+        }
+    });
 }
 
 #[cfg(desktop)]
