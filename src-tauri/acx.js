@@ -13,7 +13,26 @@ function bodyRows(t){var R=[];var B=t.tBodies.length?t.tBodies:[t];for(var b=0;b
 function rowsOf(t){var H={},hr=t.tHead?t.tHead.rows[0]:t.rows[0];if(hr)for(var i=0;i<hr.cells.length;i++){var h=txt(hr.cells[i]).toLowerCase();if(/^file$/.test(h))H.file=i;else if(/document\s*no/.test(h))H.no=i;else if(/^revision$/.test(h)||/^rev$/.test(h))H.rev=i;else if(/revision\s*date|^date$/.test(h))H.date=i;else if(/^title$/.test(h))H.title=i;else if(/^status$/.test(h))H.st=i}
  return bodyRows(t).map(function(r){function c(k){return H[k]!=null&&r.cells[H[k]]?txt(r.cells[H[k]]):''}var no=c('no');var ty='';var fc=H.file!=null?r.cells[H.file]:null;if(fc){var im=fc.querySelector('img');ty=(im&&(im.getAttribute('alt')||im.getAttribute('title')||im.getAttribute('src')||''))||fc.className||''}var m=no.match(/_(PDF|DWG|DXF|XLSX?|DOCX?|ZIP|RVT|NWD|IFC|JPE?G|PNG)$/i);if(m)ty=m[1];else{var t2=String(ty).match(/(pdf|dwg|xls|doc|zip|rvt|jpg|png|excel|word|acrobat|autocad)/i);ty=t2?t2[1]:''}
    return {no:no,rev:c('rev'),date:c('date'),title:c('title'),status:c('st'),type:String(ty).toUpperCase()}}).filter(function(x){return x.no})}
-function totalOf(D){for(var k=0;k<D.length;k++){var m=String((D[k].body&&D[k].body.innerText)||'').match(/document\s+attachments\s*\((\d+)\)/i);if(m)return +m[1]}return 0}
+function totalOf(D){for(var k=0;k<D.length;k++){var tx=String((D[k].body&&D[k].body.innerText)||''),m=tx.match(/document\s+attachments\s*\((\d+)\)/i)||tx.match(/file\s+attachments\s*\((\d+)\)/i);if(m)return +m[1]}return 0}
+/* v8: RFIs, letters, GENCORR … carry "File Attachments (n)": a table with a File Name column, its own tick boxes and a "Zip Download" button */
+function fileTable(D){for(var k=0;k<D.length;k++){var T=D[k].querySelectorAll('.mailAttachedFiles table,table');for(var i=0;i<T.length;i++){var h=T[i].tHead?txt(T[i].tHead):txt(T[i].rows[0]||T[i]);if(/file\s*name/i.test(h)&&!/document\s*no/i.test(h))return T[i]}}return null}
+function fileRows(t){return bodyRows(t).map(function(r){var c=r.querySelector('.mailAttachedFiles-filename')||r.cells[r.cells.length-1];var nm=c?txt(c).replace(/\s+/g,' ').trim():'';var m=nm.match(/\.([A-Za-z0-9]{1,6})$/);return {no:nm,rev:'',date:'',title:nm,status:'',type:m?m[1].toUpperCase():'',file:1}}).filter(function(x){return x.no})}
+function tryFiles(D,t){if(!expand(D,t))return;if(!st.fsent){st.fsent=1;save('evatt.json',{ev:'aconex-files',rows:fileRows(t),total:totalOf(D)||bodyRows(t).length,mode:CFG.mode==='scan'?'scan':'dl',kind:'files'})}
+ if(CFG.mode==='scan'){LS=true;return}
+ var R=bodyRows(t);if(!R.length){DL=true;return}
+ if(!st.fsel){st.fsel=n;if(PICK){R.forEach(function(r){var c=r.querySelector('.mailAttachedFiles-filename')||r.cells[r.cells.length-1];var nm=key(c?txt(c):'');if(PICK.indexOf(nm)<0)return;var cb=r.querySelector('input[type=checkbox],[role=checkbox]');if(cb&&!cb.checked)cb.click()})}
+   else{var hc=(t.tHead||t).querySelector('input[type=checkbox],[role=checkbox]');if(hc&&!hc.checked)hc.click()}return}
+ if(n-st.fsel<2)return;
+ /* the header tick did not reach the rows → tick each row */
+ if(!PICK&&!st.frow){st.frow=1;var any=false;R.forEach(function(r){var cb=r.querySelector('input[type=checkbox],[role=checkbox]');if(cb&&!cb.checked){cb.click();any=true}});if(any)return}
+ if(!st.fzip){var zb=null;for(var k=0;k<D.length&&!zb;k++){zb=D[k].querySelector('[data-automation-id="mailAttachedFiles-zipDownload"]')}if(!zb)zb=findBtn(D,/^zip download$/i,function(el){return !!(el.closest&&el.closest('.mailAttachedFiles'))})||findBtn(D,/^zip download$/i);
+   if(zb&&!zb.disabled){st.fzip=n;zb.click();return}
+   if(n-st.fsel<15)return;
+   /* no Zip Download possible: open each file link, one after the other */
+   DL=true;var q=[];R.forEach(function(r){if(PICK){var c=r.querySelector('.mailAttachedFiles-filename')||r.cells[r.cells.length-1];if(PICK.indexOf(key(c?txt(c):''))<0)return}var a=r.querySelector('a[data-automation-id="mailAttachedFiles-download"],.mailAttachedFiles-filename a,a');if(a)q.push(a)});
+   q.forEach(function(a,i){setTimeout(function(){try{a.click()}catch(e){}},i*700)});return}
+ if(!st.fdlg){var dg=findBtn(D,/^(download|ok|continue|start download|download now|download zip|download file)$/i,function(el){return !!(el.closest&&el.closest('[role=dialog],.modal,.dialog,.ui-dialog,.popup,.overlay,[class*=modal],[class*=dialog]'))});if(dg){st.fdlg=n;dg.click()}}
+ if(n-st.fzip>60)DL=true}
 function scroller(el){var x=el;while(x&&x!==x.ownerDocument.body){try{var cs=x.ownerDocument.defaultView.getComputedStyle(x);if(/(auto|scroll)/.test(cs.overflowY)&&x.scrollHeight>x.clientHeight+4)return x}catch(e){}x=x.parentElement}return null}
 var EXP={n:-1,same:0,done:false,clicks:0};
 function expand(D,t){if(EXP.done)return true;var R=bodyRows(t).length,tot=totalOf(D);if(tot&&R>=tot){EXP.done=true;return true}
@@ -25,9 +44,9 @@ function expand(D,t){if(EXP.done)return true;var R=bodyRows(t).length,tot=totalO
  if(more)EXP.ct=Date.now();if(R===EXP.n){EXP.same++}else{EXP.same=0;EXP.n=R}
  if(EXP.same>=(EXP.ct?20:4)&&Date.now()-(EXP.ct||0)>3000){EXP.done=true;try{(t.tHead||t).scrollIntoView({block:'start'})}catch(e){}return true}return false}
 function key(x){return String(x||'').toUpperCase().replace(/\s+/g,'')}
-function tryList(D){if(LS)return;var t=attTable(D);if(!t){if(MS&&n>30){LS=true;save('evatt.json',{ev:'aconex-files',rows:[],total:totalOf(D)})}return}if(!expand(D,t))return;LS=true;save('evatt.json',{ev:'aconex-files',rows:rowsOf(t),total:totalOf(D)})}
+function tryList(D){if(LS)return;var t=attTable(D);if(!t){var ft=fileTable(D);if(ft)return tryFiles(D,ft);if(MS&&n>30){LS=true;save('evatt.json',{ev:'aconex-files',rows:[],total:totalOf(D)})}return}if(!expand(D,t))return;LS=true;save('evatt.json',{ev:'aconex-files',rows:rowsOf(t),total:totalOf(D)})}
 function tryDl(D){if(DL)return;if(!PICK){var all=findBtn(D,/^download all( files| attachments| documents)?$/i);if(all){DL=true;all.click();return}}
- var t=attTable(D);if(!t)return;if(!expand(D,t))return;if(!st.sent){st.sent=1;save('evatt.json',{ev:'aconex-files',rows:rowsOf(t),total:totalOf(D),mode:'dl'})}
+ var t=attTable(D);if(!t){var ft=fileTable(D);if(ft)return tryFiles(D,ft);if(!st.none&&n>20){st.none=1;DL=true;save('evatt.json',{ev:'aconex-files',rows:[],total:0,mode:'dl',none:1})}return}if(!expand(D,t))return;if(!st.sent){st.sent=1;save('evatt.json',{ev:'aconex-files',rows:rowsOf(t),total:totalOf(D),mode:'dl'})}
  if(st.sel&&!st.all2&&!PICK){var sa=findText(D,/^select all \d+( documents| items| files| attachments)?$/i);if(sa){st.all2=1;try{sa.click()}catch(e){}return}}
  if(!st.sel){if(PICK){var R0=bodyRows(t),ni=hdrIdx(t,/document\s*no/i);R0.forEach(function(r){var no=ni>=0&&r.cells[ni]?key(txt(r.cells[ni])):'';if(PICK.indexOf(no)<0)return;var cb=r.querySelector('input[type=checkbox],[role=checkbox]');if(cb&&!(cb.checked||cb.getAttribute('aria-checked')==='true'))cb.click()});st.sel=n;return}var cb=(t.tHead||t).querySelector('input[type=checkbox],[role=checkbox]');if(cb){var on=cb.checked||cb.getAttribute('aria-checked')==='true';if(!on)cb.click();st.sel=n;return}st.sel=n}
  if(n-st.sel<2)return;
