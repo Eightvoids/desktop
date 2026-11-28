@@ -640,6 +640,8 @@ async fn outlook_save_atts(app: AppHandle, entry: String) -> Result<String, Stri
 // under the document's reference and handed to the Eight Voids page, which files them into 502 Attachments.
 #[cfg(desktop)]
 static ACX_KEY: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+#[cfg(desktop)]
+static ACX_N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 // 1.4.7: the Aconex page helper (acx.js) – presses Aconex's own "Download all" once when an element with exactly that
 // text shows, and saves the opened mail page (text, layout, its logos) as evmail.json so Eight Voids can make the
@@ -654,7 +656,13 @@ fn acx_key_clean(k: &str) -> String {
 
 #[cfg(desktop)]
 #[tauri::command]
-async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool>) -> Result<String, String> {
+async fn aconex_open(
+    app: AppHandle,
+    url: String,
+    key: String,
+    auto: Option<bool>,
+    script: Option<String>,
+) -> Result<String, String> {
     let u: tauri::Url = url.trim().parse().map_err(|_| "This is not a web link.".to_string())?;
     if u.scheme() != "https" {
         return Err("Only https links are opened.".into());
@@ -664,18 +672,21 @@ async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool
         *g = k.clone();
     }
     let title = format!("Aconex · {} · downloads go to Eight Voids", if k.is_empty() { "-" } else { &k });
-    if let Some(w) = app.get_webview_window("aconex") {
-        let to = serde_json::to_string(u.as_str()).map_err(|e| e.to_string())?;
-        w.eval(&format!("window.location.href={};", to)).map_err(|e| e.to_string())?;
-        let _ = w.set_title(&title);
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-        return Ok("open".into());
+    // 1.4.8: the page helper comes from the Eight Voids page (so it can improve without a new app); the built-in one otherwise
+    let js = match script {
+        Some(s) if !s.trim().is_empty() && s.len() < 400_000 => s,
+        _ => ACX_JS.to_string(),
+    };
+    // one Aconex window at a time: the earlier one closes (the Aconex sign-in is kept by the app)
+    for (label, w) in app.webview_windows() {
+        if label.starts_with("aconex") {
+            let _ = w.close();
+        }
     }
+    let n = ACX_N.fetch_add(1, Ordering::SeqCst);
     let base = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("aconex");
     let h = app.clone();
-    let mut b = WebviewWindowBuilder::new(&app, "aconex", WebviewUrl::External(u))
+    let mut b = WebviewWindowBuilder::new(&app, format!("aconex{}", n), WebviewUrl::External(u))
         .title(title)
         .inner_size(1240.0, 880.0)
         .min_inner_size(800.0, 600.0)
@@ -690,16 +701,29 @@ async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| "download".to_string());
+                    let ext = std::path::Path::new(&name)
+                        .extension()
+                        .map(|e| format!(".{}", e.to_string_lossy()))
+                        .unwrap_or_default();
                     // very long names (Aconex zips) are shortened here so the full path stays short; the extension is kept
                     if name.chars().count() > 80 {
-                        let ext = std::path::Path::new(&name)
-                            .extension()
-                            .map(|e| format!(".{}", e.to_string_lossy()))
-                            .unwrap_or_default();
                         let stem: String = name.chars().take(80 - ext.chars().count().min(20)).collect();
                         name = format!("{}{}", stem.trim_end(), ext);
                     }
-                    *destination = dir.join(name);
+                    // a second file with the same name never replaces the first
+                    let stem0: String = name.chars().take(name.chars().count() - ext.chars().count()).collect();
+                    let mut target = dir.join(&name);
+                    let mut i = 2;
+                    while target.exists() && i < 100 {
+                        target = dir.join(format!("{} ({}){}", stem0, i, ext));
+                        i += 1;
+                    }
+                    let _ = h.emit_to(
+                        tauri::EventTarget::webview_window("main"),
+                        "ev-aconex-dl",
+                        serde_json::json!({ "path": target.to_string_lossy().to_string(), "start": true }),
+                    );
+                    *destination = target;
                     true
                 }
                 tauri::webview::DownloadEvent::Finished { path, success, .. } => {
@@ -715,7 +739,7 @@ async fn aconex_open(app: AppHandle, url: String, key: String, auto: Option<bool
             }
         });
     if auto.unwrap_or(true) {
-        b = b.initialization_script(ACX_JS);
+        b = b.initialization_script(&js);
     }
     b.build().map_err(|e| e.to_string())?;
     Ok("new".into())
